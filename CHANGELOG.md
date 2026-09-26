@@ -1,5 +1,40 @@
 # Historial de cambios
 
+## 1.5.0
+
+El código de acceso se puede quitar y volver a poner.
+
+### Añadido
+
+- **Desactivar el código de acceso (PIN y QR)** por tres vías:
+  - al arrancar, con `--no-auth`;
+  - en caliente y desde el celular, con *Ajustes → Quitar el código de acceso*
+    (solo funciona si el dispositivo ya está autorizado);
+  - en caliente desde la consola de la PC, escribiendo `auth off`.
+- **Volver a pedirlo** con `auth on` en la consola o el mismo botón de
+  *Ajustes*; al reactivarlo se genera un **PIN nuevo**.
+- La consola muestra un **recuadro de aviso** mientras está desactivado, el
+  panel del QR deja de mostrar códigos y avisa, y la pantalla de acceso de la
+  app lo indica con un botón para entrar directamente.
+- `POST /api/auth` para cambiarlo desde la propia PC (solo responde a la PC).
+- `tools/test_acceso_libre.py`: 22 comprobaciones de las cuatro vías y de que
+  cambiar el modo exige estar autorizado.
+
+### Corregido
+
+- **`--no-auth` no funcionaba del todo.** El servidor aceptaba el PIN vacío solo
+  si el cliente lo enviaba, pero al conectar sin token se le respondía
+  `auth_required` y la pantalla de acceso no tenía forma de entrar. Ahora la
+  autorización es inmediata y el botón de la pantalla de acceso funciona.
+- Cuando el control de acceso está desactivado no se generan códigos QR (no
+  hacen falta) y el aviso del arranque ya no muestra «PIN DE ACCESO».
+
+### Nota
+
+Mientras el código está quitado, cualquiera en la misma WiFi puede manejar el
+ratón y el teclado. Está pensado para pruebas o para una red de total confianza,
+y la aplicación lo recuerda en los tres sitios donde se puede quitar.
+
 ## 1.4.0
 
 Imposible quedarse con una versión antigua de la aplicación en el celular.

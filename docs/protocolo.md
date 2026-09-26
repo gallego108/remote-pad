@@ -24,11 +24,15 @@ el acceso por QR). Los mensajes son objetos JSON compactos.
 
 | Acción | Datos | Respuesta |
 |---|---|---|
-| `auth` | `{ token }` o `{ pin }` | `{ t: "ok", status: "auth", token?, screen }` |
+| `auth` | `{ token }`, `{ pin }` o `{ sinCodigo: true }` | `{ t: "ok", status: "auth", token?, screen }` |
+| `auth_query` | — | `{ t: "auth_state", required, pin? }` — la pantalla de acceso pregunta si hace falta código |
 | `viewer` | — | `{ t: "ok", status: "viewer", pin }` (modo espectador, solo mira) |
 
 Si falta autenticación, el servidor responde `{ t: "auth_required" }` y, si
 falla, `{ t: "auth_fail", reason }`.
+
+Con el control de acceso desactivado, `auth` autoriza al instante sin mirar el
+token ni el PIN, y `auth_query` responde `required: false`.
 
 ### Puntero
 
@@ -72,6 +76,7 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `get_driver` | — | Diagnóstico: botón que el servidor tiene presionado |
 | `refresh_pin` | — | PIN y segundos restantes |
 | `comando_detener` | — | Detiene el servidor. **Requiere estar ya autorizado.** Su respuesta se envía antes que el aviso `shutdown` |
+| `set_auth` | `{ required }` | Quita o vuelve a pedir el código de acceso. **Requiere estar ya autorizado** |
 
 ## Mensajes del servidor
 

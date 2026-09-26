@@ -53,6 +53,26 @@ instante tarde. Es una ventana pequeña y acotada, y cada código sigue sirviend
 Apagar el servidor no borra los tokens: al volver a arrancarlo, los celulares
 que ya estaban autorizados entran sin pedir nada (hasta 30 días).
 
+### Quitar el código de acceso
+
+Se puede desactivar por completo (PIN y QR) de tres formas: `--no-auth` al
+arrancar, el botón *Ajustes → Quitar el código de acceso* en el celular, o el
+comando `auth off` en la consola de la PC.
+
+**Es la opción menos segura de todas**: mientras está quitado, cualquier
+dispositivo de tu red puede conectarse y manejar el ratón y el teclado sin
+ninguna credencial. Por eso:
+
+- la consola muestra un **recuadro de aviso** mientras dure;
+- la pantalla de acceso de la app lo indica;
+- el panel del QR avisa y deja de mostrar códigos;
+- solo un dispositivo **ya autorizado** (o la propia PC) puede cambiarlo, así
+  que nadie de la red puede quitarse la protección por su cuenta.
+
+Al volver a activarlo se genera un **PIN nuevo** y los accesos anteriores
+siguen valiendo (no se expulsa a quien ya estaba dentro). Está pensado para
+pruebas o para una red de total confianza; vuelve a activarlo después.
+
 ### Token de dispositivo
 
 Tras acertar el PIN o el QR, el celular recibe un token de 24 bytes

@@ -152,9 +152,15 @@
 <div class="url" id="url"></div>
 
 <div class="meta">
-  <span>Este código vale <span class="timer" id="timer">3:00</span> y se renueva solo</span>
+  <span id="estado">Este código vale <span class="timer" id="timer">3:00</span> y se renueva solo</span>
   <button id="new">Generar uno nuevo</button>
 </div>
+
+<p class="sub" id="libre" hidden>
+  El código de acceso está <b>desactivado</b>: el celular entra directamente, sin
+  PIN ni QR. Vuelve a pedirlo desde <i>Ajustes</i> en el celular, o escribiendo
+  <b>auth on</b> en la consola de la PC.
+</p>
 
 <ol>
   <li>Conecta el celular a la <b>misma red WiFi</b> que esta PC.</li>
@@ -203,6 +209,15 @@ function apply(data) {
   expiresAt = Date.now() + seconds * 1000;
   document.title = 'RemotePad — ' + data.pin;
   timer.classList.remove('expired');
+
+  // Si el control de acceso esta desactivado, el QR no hace falta: se dice.
+  const libre = data.auth_required === false;
+  const aviso = document.getElementById('libre');
+  if (aviso) aviso.hidden = !libre;
+  const meta = document.getElementById('estado');
+  if (meta) meta.hidden = libre;
+  const boton = document.getElementById('new');
+  if (boton) boton.hidden = libre;
 }
 
 /** Pide al servidor un codigo nuevo (tambien se renueva solo). */

@@ -45,6 +45,25 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
 - Al detenerse, los celulares conectados lo avisan en pantalla; los accesos
   guardados siguen valiendo para la próxima vez.
 
+### Quitar el código de acceso (temporalmente)
+
+Si quieres entrar sin PIN ni código QR, hay tres formas:
+
+| Cómo | Qué hacer |
+|---|---|
+| **Al arrancar** | `iniciar.bat --no-auth` |
+| **En caliente, desde el celular** | *Ajustes → Quitar el código de acceso* |
+| **En caliente, desde la consola** | Escribe `auth off` y pulsa ENTER |
+
+Para volver a pedirlo: *Ajustes → Volver a pedir el código*, o `auth on` en la
+consola (genera un PIN nuevo). Quien ya estaba dentro sigue dentro: no se expulsa
+a nadie, simplemente deja de pedirse el código a los nuevos.
+
+> **Aviso**: mientras está quitado, **cualquiera conectado a tu misma WiFi puede
+> mover el puntero, hacer clic y escribir en tu PC**. La consola lo recuerda con
+> un recuadro de aviso mientras dure. Úsalo solo en una red de confianza y
+> vuelve a activarlo cuando termines.
+
 > ### Si el celular dice "no se puede conectar"
 >
 > Es el **Firewall de Windows**, no la aplicación: Windows no tiene ninguna
@@ -132,6 +151,10 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 - **8 intentos fallidos** de PIN (o 10 de QR) desde una misma dirección
   bloquean el acceso durante 5 minutos.
 - El panel que muestra el QR en grande **solo responde a la propia PC**.
+- **El código de acceso se puede quitar** temporalmente (`--no-auth` al
+  arrancar, `auth off` en la consola, o el botón de *Ajustes*). Mientras está
+  quitado, **cualquiera en tu red puede controlar la PC**: la consola lo avisa
+  con un recuadro y la app lo indica en la pantalla de acceso.
 - Al desconectarse el celular, la PC **suelta** automáticamente botones y teclas.
 - La aplicación solo escucha en tu **red local**; no se abre nada hacia internet.
 

@@ -23,6 +23,8 @@ const el = {
   pinInput: $('pin-input'),
   authBtn: $('auth-btn'),
   authError: $('auth-error'),
+  authOpen: $('auth-open'),
+  authHint: $('auth-hint'),
   pinLive: $('pin-live'),
   pinLiveValue: $('pin-live-value'),
   app: $('app'),
@@ -88,6 +90,7 @@ const state = {
   qrDescartado: false,      // el usuario ha decidido escribir el PIN
   tokenDescartado: false,   // ya se reintento sin el token guardado
   detenido: false,          // el servicio se ha detenido (no reconectar)
+  authRequired: true,       // la PC pide PIN/QR (lo dice el servidor)
 };
 
 /* ------------------------------------------------------------ utilidades */
@@ -186,8 +189,10 @@ function connect() {
       send('auth', { token });
       setStatus('Verificando…', 'pending');
     } else {
-      send('auth', { pin: '' });
-      setStatus('Sin autorizar', 'pending');
+      // Sin token guardado: se pregunta a la PC si hace falta codigo de
+      // acceso. Si esta desactivado, el servidor autoriza al instante.
+      send('auth_query', {});
+      setStatus('Conectando…', 'pending');
     }
     startPing();
   };
@@ -259,6 +264,23 @@ function handleMessage(message) {
       el.pinInput.focus();
       break;
 
+    case 'auth_state':
+      // La PC nos dice si hace falta codigo de acceso.
+      state.authRequired = message.required !== false;
+      applyAuthMode(message.required !== false, message.pin);
+      break;
+
+    case 'auth_mode':
+      // Alguien cambio el modo (desde el celular o desde la consola de la PC).
+      state.authRequired = message.required !== false;
+      applyAuthMode(state.authRequired, message.pin);
+      if (state.authRequired) {
+        toast('Se ha activado el código de acceso', 3000);
+      } else {
+        toast('Acceso libre: ya no hace falta código', 3000);
+      }
+      break;
+
     case 'auth_fail':
       state.authorized = false;
       const teniaToken = Boolean(localStorage.getItem(TOKEN_KEY));
@@ -313,6 +335,8 @@ function handleMessage(message) {
         state.serverPin = message.d.pin;
         el.pinChip.textContent = message.d.pin;
         toast('PIN actual en la PC: ' + message.d.pin, 2600);
+      } else if (message.a === 'set_auth' && message.d) {
+        applyAuthMode(message.d.required !== false, message.d.pin);
       } else if (message.d && message.d.error) {
         toast('No se pudo: ' + message.d.error);
       }
@@ -747,6 +771,35 @@ function bindUI() {
 
   el.pinBtn.addEventListener('click', () => { send('get_state', {}); });
 
+  // --- entrar sin codigo (cuando la PC tiene el acceso desactivado) -------
+  el.authOpen.addEventListener('click', entrarSinCodigo);
+
+  // --- activar o quitar el codigo de acceso ------------------------------
+  $('btn-authmode').addEventListener('click', async () => {
+    const quitar = state.authRequired;
+    const mensaje = quitar
+      ? '¿Quitar el código de acceso?\n\nMientras esté quitado, cualquiera '
+        + 'conectado a tu misma WiFi podrá mover el puntero, hacer clic y '
+        + 'escribir en la PC, sin PIN ni código QR.'
+      : '¿Volver a pedir el código de acceso?\n\nSe generará un PIN nuevo y '
+        + 'habrá que escanear el QR o escribirlo para conectarse.';
+    if (!window.confirm(mensaje)) return;
+    // Si estamos en la propia PC, la via directa es el endpoint local.
+    try {
+      const respuesta = await fetch('api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ required: !quitar }),
+      });
+      if (respuesta.ok) {
+        toast(quitar ? 'Código de acceso desactivado' : 'Código activado', 3000);
+        return;
+      }
+    } catch (_) { /* no somos la PC: se pide por el WebSocket */ }
+    send('set_auth', { required: !quitar });
+    toast(quitar ? 'Quitando el código…' : 'Activando el código…', 3000);
+  });
+
   el.modeBtn.addEventListener('click', () => {
     if (state.mode === 'pointer') {
       startLeftDrag();
@@ -1091,6 +1144,47 @@ function showAuthError(message) {
   el.authError.textContent = message;
   el.authError.hidden = false;
   el.pinInput.focus();
+}
+
+/**
+ * Pinta la pantalla de acceso segun si la PC pide codigo o no.
+ *
+ * Con el control de acceso desactivado, el servidor autoriza al instante, asi
+ * que normalmente ni se llega a ver esta pantalla; pero si se llega (por
+ * ejemplo al activarlo de nuevo), aqui se ofrece la opcion de entrar directo.
+ */
+function applyAuthMode(required, pin) {
+  state.authRequired = required;
+  if (typeof pin === 'string' && pin) state.serverPin = pin;
+
+  el.pinInput.hidden = !required;
+  el.pinChip.textContent = required && state.serverPin
+    ? state.serverPin : (required ? '······' : 'sin código');
+  el.pinBtn.classList.toggle('armed', !required);
+  el.authOpen.hidden = required;
+  el.authHint.textContent = required
+    ? 'Escribe el PIN que muestra la consola de la PC, o escanea el código QR.'
+    : 'La PC tiene el código de acceso desactivado: puedes entrar directamente.';
+
+  const boton = $('btn-authmode');
+  if (boton) {
+    boton.textContent = required
+      ? 'Quitar el código de acceso'
+      : 'Volver a pedir el código de acceso';
+  }
+  const info = $('auth-mode-info');
+  if (info) {
+    info.textContent = required
+      ? 'Ahora mismo la PC pide PIN o código QR para conectarse.'
+      : 'AVISO: con el código desactivado, cualquiera en tu misma WiFi puede '
+        + 'manejar la PC.';
+  }
+}
+
+/** Autoriza este celular cuando la PC tiene el acceso libre. */
+function entrarSinCodigo() {
+  send('auth', { sinCodigo: true });
+  setStatus('Entrando…', 'pending');
 }
 
 /* ------------------------------------------------------------- arranque */

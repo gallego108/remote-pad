@@ -168,6 +168,22 @@ Cada QR **vale 3 minutos** y sirve **una sola vez**. Escanea el que muestra la
 PC en ese momento: el panel `/qr` y la consola generan uno nuevo
 automáticamente, así que siempre hay uno vigente.
 
+### Quiero entrar sin escribir código
+
+Hay tres formas de quitar el código de acceso:
+
+- Al arrancar: `iniciar.bat --no-auth`
+- Desde el celular, si ya entraste alguna vez: *Ajustes → Quitar el código de
+  acceso*
+- Desde la consola de la PC: escribe `auth off` y pulsa ENTER
+
+Para volver a pedirlo: *Ajustes → Volver a pedir el código* o `auth on` en la
+consola. **Mientras esté quitado, cualquiera en tu WiFi puede manejar la PC**;
+la consola lo avisa con un recuadro mientras dure.
+
+Si el botón del celular no hace nada, puede que la app del teléfono tenga una
+copia antigua: borra los datos del sitio y recarga.
+
 ### El servicio no se detiene
 
 - Escribe **`q` + ENTER** en la consola del servidor, o **`Ctrl+C`**.

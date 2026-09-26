@@ -74,7 +74,7 @@ QR_PRE_REFRESH_SECONDS = 20.0   # antelacion con que el panel pide el siguiente
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -151,6 +151,16 @@ BANNER = r"""
   |_|_\___|_|_|_\___/_||_|\__|_| \__,_\__,_|
 """
 
+AVISO_SIN_ACCESO = r"""
+  ####################################################################
+  #  CONTROL DE ACCESO DESACTIVADO                                   #
+  #  Cualquiera conectado a tu misma red WiFi puede mover el puntero, #
+  #  hacer clic y escribir en esta PC, sin PIN ni codigo QR.          #
+  #  Para volver a pedirlo: escribe  "auth on"  aqui y pulsa ENTER.   #
+  #  (o pulsa el boton de Ajustes en el celular)                      #
+  ####################################################################
+"""
+
 
 def corta_duracion(segundos: float) -> str:
     """Texto legible de una duracion: '30 segundos', '3 minutos'..."""
@@ -197,7 +207,10 @@ def print_banner(host: str, port: int, pin: str, auth: bool,
         print(f"   PIN DE ACCESO  ->  {pin[:3]} {pin[3:]}")
         print("   (cambia automaticamente cada 5 minutos)")
     else:
-        print("   MODO SIN CONTRASENA (--no-auth): cualquiera en tu WiFi entra")
+        print("   CONTROL DE ACCESO DESACTIVADO")
+        print("   El celular entra directo, sin PIN ni codigo QR.")
+        print("   AVISO: cualquiera en tu misma WiFi puede manejar la PC.")
+        print("   Para volver a pedirlo: escribe  auth on  y pulsa ENTER.")
     print(line)
     print("   Abre esta direccion en el navegador del celular:")
     print(f"       http://{host}:{port}")
@@ -255,6 +268,9 @@ class Gateway:
 
         self.pin = new_pin()
         self._pin_generated = time.monotonic()
+        # Con False, cualquiera de la red entra sin PIN ni QR: lo activan
+        # --no-auth, el comando "auth off" de la consola o el boton de Ajustes.
+        self.auth_required = True
         self.login_key = new_login_key()      # clave del enlace del codigo QR
         self.login_key_generated = self._pin_generated
         # Claves anteriores que se siguen aceptando unos segundos (margen de
@@ -315,6 +331,8 @@ class Gateway:
         """
         if self.shutting_down:
             return
+        if not self.auth_required:
+            return          # sin control de acceso el QR no hace falta
         if time.monotonic() - self.login_key_generated < QR_VALID_SECONDS:
             return
         self.refresh_login_key()
@@ -399,7 +417,12 @@ class Gateway:
         Acepta la clave vigente y tambien las anteriores mientras esten dentro
         del margen de gracia: asi, si el codigo se renovo mientras el celular
         lo escaneaba, el acceso no falla. Cada clave sirve una sola vez.
+
+        Con el control de acceso desactivado se entrega token sin mirar la
+        clave: el QR no es necesario.
         """
+        if not self.auth_required:
+            return self.issue_token()
         if not key:
             return None
 
@@ -467,6 +490,10 @@ class Gateway:
         self._pin_failures.setdefault(addr, []).append(time.time())
 
     def check_pin(self, pin: Any, addr: str = "?") -> bool:
+        # Con el control de acceso desactivado entra cualquiera de la red: es
+        # comodo para probar, pero cualquiera en tu WiFi puede manejar la PC.
+        if not self.auth_required:
+            return True
         if self._too_many_failures(addr):
             return False
         if hmac.compare_digest(str(pin or ""), self.pin):
@@ -474,6 +501,30 @@ class Gateway:
             return True
         self._register_failure(addr)
         return False
+
+    def set_auth_required(self, activo: bool, motivo: str = "") -> bool:
+        """
+        Activa o desactiva el codigo de acceso (PIN y QR) en caliente.
+
+        Devuelve True si el estado ha cambiado. Al desactivarlo se avisa a los
+        celulares conectados para que lo sepan, y al activarlo se avisa tambien
+        para que no se queden creyendo que sigue libre.
+        """
+        if self.auth_required == activo:
+            return False
+        self.auth_required = activo
+        if activo:
+            # Se genera un PIN nuevo, para que no valga uno visto antes.
+            self.pin = new_pin()
+            self._pin_generated = time.monotonic()
+            log.info("Control de acceso ACTIVADO%s (PIN %s)",
+                     f" {motivo}".rstrip(), self.pin)
+            self.broadcast({"t": "auth_mode", "required": True, "pin": self.pin})
+        else:
+            log.warning("Control de acceso DESACTIVADO%s: cualquiera en tu "
+                        "WiFi puede manejar la PC", f" {motivo}".rstrip())
+            self.broadcast({"t": "auth_mode", "required": False})
+        return True
 
     def keep_pin_fresh(self) -> None:
         self.rotate_pin_if_needed()
@@ -752,7 +803,15 @@ class Gateway:
                 "screen": list(c.refresh_screen_size()),
                 "pin": self.pin,
                 "pin_seconds": self.pin_seconds_left(),
+                "auth_required": self.auth_required,
             }
+
+        if action == "set_auth":
+            # Solo un dispositivo ya autorizado puede quitar el codigo de
+            # acceso (la comprobacion previa a este bloque lo garantiza).
+            activo = bool(data.get("required", True))
+            cambiado = self.set_auth_required(activo, f"peticion de {client.addr}")
+            return {"ok": True, "required": self.auth_required, "cambiado": cambiado}
 
         if action == "get_driver":
             # Diagnostico: que boton tiene presionado el servidor ahora mismo.
@@ -867,6 +926,24 @@ class Gateway:
                     {"t": "ok", "status": "viewer", "id": client.client_id, "pin": self.pin},
                 )
                 return
+
+            # Con el control de acceso desactivado se autoriza al instante: el
+            # celular entra sin PIN ni QR.
+            if action == "auth" and not self.auth_required:
+                client.token = self.issue_token()
+                client.kind = "auth"
+                self.clients.add(client)
+                log.info("Autorizado sin codigo (control de acceso "
+                         "desactivado): %s", client.addr)
+                self._enqueue(client, {
+                    "t": "ok",
+                    "status": "auth",
+                    "id": client.client_id,
+                    "token": client.token,
+                    "screen": list(self.controller.screen_size),
+                })
+                return
+
             if action == "auth":
                 response = self.handle_auth(client, data)
                 assert response is not None
@@ -874,6 +951,17 @@ class Gateway:
                     self.clients.add(client)
                 self._enqueue(client, response)
                 return
+
+            if action == "auth_query":
+                # Pregunta de la pantalla de acceso: asi sabe si debe pedir
+                # codigo o si puede entrar directamente.
+                self._enqueue(client, {
+                    "t": "auth_state",
+                    "required": self.auth_required,
+                    "pin": self.pin if self.auth_required else "",
+                })
+                return
+
             self._enqueue(client, {"t": "auth_required"})
             return
 
@@ -939,6 +1027,7 @@ def dashboard_html(gateway: Gateway, url: str) -> str:
         "key": gateway.login_key,
         "pin": gateway.pin,
         "seconds": gateway.qr_seconds_left(),
+        "auth_required": gateway.auth_required,
         "matrix": qr.encode(url, "M"),
     }
     # La matriz y los datos van como JSON incrustado: la pagina se dibuja en
@@ -1042,7 +1131,8 @@ def build_app(gateway: Gateway) -> web.Application:
             return web.json_response(
                 {"ok": False, "error": "El codigo QR caduco"}, status=403
             )
-        log.info("Autorizado con el QR: %s", addr)
+        log.info("Autorizado con el QR: %s", addr) if gateway.auth_required else \
+            log.info("Autorizado sin codigo (control de acceso desactivado): %s", addr)
         return web.json_response({"ok": True, "token": token})
 
     async def qr_refresh(request: web.Request) -> web.StreamResponse:
@@ -1099,6 +1189,7 @@ def build_app(gateway: Gateway) -> web.Application:
                         "key": last_key,
                         "pin": gateway.pin,
                         "seconds": gateway.qr_seconds_left(),
+                        "auth_required": gateway.auth_required,
                         "matrix": qr.encode(gateway.login_url(), "M"),
                     }
                     await response.write(
@@ -1126,6 +1217,7 @@ def build_app(gateway: Gateway) -> web.Application:
             "key": gateway.login_key,
             "pin": gateway.pin,
             "seconds": gateway.qr_seconds_left(),
+            "auth_required": gateway.auth_required,
             "matrix": qr.encode(url, "M"),
         })
 
@@ -1143,6 +1235,23 @@ def build_app(gateway: Gateway) -> web.Application:
         gateway.request_stop("desde el navegador de la PC")
         return web.json_response({"ok": True})
 
+    async def api_auth(request: web.Request) -> web.StreamResponse:
+        """
+        Activa o desactiva el codigo de acceso desde la propia PC.
+
+        Solo responde a la PC: si lo aceptara desde la red, cualquiera podria
+        quitar la proteccion.
+        """
+        if not is_local(request):
+            raise web.HTTPForbidden(text="Solo se puede cambiar desde la PC")
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        activo = bool((payload or {}).get("required", True))
+        gateway.set_auth_required(activo, "desde el navegador de la PC")
+        return web.json_response({"ok": True, "required": gateway.auth_required})
+
     app.router.add_get("/", index)
     app.router.add_get("/ws", gateway.ws_handler)
     app.router.add_get("/qr", qr_page)
@@ -1151,6 +1260,7 @@ def build_app(gateway: Gateway) -> web.Application:
     app.router.add_post("/api/qr-login", qr_login)
     app.router.add_post("/api/qr-refresh", qr_refresh)
     app.router.add_post("/api/stop", api_stop)
+    app.router.add_post("/api/auth", api_auth)
     app.router.add_get("/{name}", static_file)
     app.router.add_get("/healthz", health)
     return app
@@ -1165,10 +1275,9 @@ async def run(args: argparse.Namespace) -> None:
     gateway = Gateway(controller, host=args.host, port=args.port)
 
     if args.no_auth:
-        async def _always_ok(pin: Any = None, addr: str = "?") -> bool:
-            return True
-
-        gateway.check_pin = _always_ok  # type: ignore[assignment]
+        # Arrancar sin codigo de acceso: comodo para probar, pero cualquiera en
+        # la misma WiFi puede manejar la PC.
+        gateway.auth_required = False
 
     app = build_app(gateway)
     runner = web.AppRunner(app, access_log=None)
@@ -1187,6 +1296,8 @@ async def run(args: argparse.Namespace) -> None:
         log.info("Comprueba en el celular que la app muestre la version %s "
                  "(Ajustes); si muestra otra, borra los datos del sitio.",
                  APP_VERSION)
+    if not gateway.auth_required:
+        print(AVISO_SIN_ACCESO)
 
     shown_host = args.host
     if shown_host in ("0.0.0.0", "::"):
@@ -1264,6 +1375,8 @@ async def console_commands(gateway: Gateway) -> None:
     threading.Thread(target=leer_consola, daemon=True, name="consola").start()
 
     parar = {"q", "quit", "salir", "exit", "s"}
+    encender = {"auth on", "autenticacion on", "codigo on", "pin on"}
+    apagar = {"auth off", "autenticacion off", "codigo off", "pin off"}
     try:
         while True:
             linea = await cola.get()
@@ -1271,6 +1384,15 @@ async def console_commands(gateway: Gateway) -> None:
             if comando in parar:
                 gateway.request_stop("desde la consola")
                 return
+            if comando in encender:
+                gateway.set_auth_required(True, "desde la consola")
+                print("   Control de acceso ACTIVADO. El PIN actual es "
+                      f"{gateway.pin}")
+                continue
+            if comando in apagar:
+                gateway.set_auth_required(False, "desde la consola")
+                print(AVISO_SIN_ACCESO)
+                continue
             if comando in ("", "qr"):
                 if gateway.show_qr_console:
                     gateway.refresh_login_key()
@@ -1280,7 +1402,8 @@ async def console_commands(gateway: Gateway) -> None:
                     print("   Este terminal no admite el QR en color; "
                           "usa el panel del navegador.")
                 continue
-            print("   ENTER = nuevo codigo QR   ·   q + ENTER = detener")
+            print("   ENTER = nuevo codigo QR   ·   q = detener   ·   "
+                  "auth off / auth on = codigo de acceso")
     except asyncio.CancelledError:
         pass
     except Exception:
@@ -1295,7 +1418,8 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--host", default="0.0.0.0", help="interfaz de escucha (def. 0.0.0.0)"
     )
-    parser.add_argument("--no-auth", action="store_true", help="desactivar el PIN")
+    parser.add_argument("--no-auth", action="store_true",
+                        help="quitar el codigo de acceso (PIN y QR)")
     parser.add_argument(
         "--no-qr", action="store_true", help="no generar el codigo QR de acceso"
     )

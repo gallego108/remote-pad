@@ -106,6 +106,14 @@ body { user-select: none; -webkit-user-select: none; }
 .primary:active { transform: translateY(1px); }
 .primary[disabled] { opacity: .6; }
 
+/* Boton secundario: entrar sin codigo cuando el acceso esta desactivado. */
+.primary.secondary {
+  margin-top: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
 .error { color: var(--danger); font-size: .85rem; margin: 10px 0 0; }
 
 .pin-live {

@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.4.0';
+const REMOTEPAD_WEB = '1.5.0';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -80,6 +80,9 @@ const REMOTEPAD_WEB = '1.4.0';
            maxlength="6" placeholder="• • • • • •" autocomplete="one-time-code" aria-label="PIN de acceso">
     <p id="auth-error" class="error" hidden></p>
     <button id="auth-btn" type="submit" class="primary">Conectar</button>
+    <button id="auth-open" type="button" class="primary secondary" hidden>
+      Entrar sin código (acceso desactivado en la PC)
+    </button>
     <p id="pin-live" class="pin-live" hidden>PIN actual en la PC: <b id="pin-live-value"></b></p>
     <p class="tiny">El código QR vale 3 minutos y se renueva solo: si caducó,
       escanea el que muestra la PC. El PIN dura 5 minutos.</p>
@@ -278,9 +281,11 @@ const REMOTEPAD_WEB = '1.4.0';
     </label>
     <div class="sheet-actions">
       <button class="key" id="btn-fullscreen">Pantalla completa</button>
+      <button class="key" id="btn-authmode">Quitar el código de acceso</button>
       <button class="key" id="btn-stop">Detener RemotePad en la PC</button>
       <button class="key" id="btn-logout">Olvidar este dispositivo</button>
     </div>
+    <p class="tiny" id="auth-mode-info"></p>
     <p class="tiny" id="about"></p>
   </div>
 </section>
