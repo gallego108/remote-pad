@@ -1,0 +1,3 @@
+# RemotePad solo necesita el servidor web: el control del mouse y del
+# teclado se hace con la API nativa de Windows (ver native_input.py).
+aiohttp>=3.9

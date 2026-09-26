@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>RemotePad — Acceso con QR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #0b0f17;
+    --card: #ffffff;
+    --line: #dfe5ef;
+    --text: #101828;
+    --muted: #667085;
+    --accent: #3f7ce8;
+  }
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 32px 20px;
+    background: radial-gradient(90% 70% at 50% 0%, #14203a, var(--bg) 70%);
+    color: #e8eef8;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: .3px;
+    text-align: center;
+  }
+
+  .sub {
+    margin: -12px 0 0;
+    color: #93a2ba;
+    font-size: .95rem;
+    text-align: center;
+  }
+
+  /* La tarjeta blanca es lo que se escanea: fondo claro y QR oscuro, que es
+     lo que esperan las camaras. */
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 26px 26px 22px;
+    background: var(--card);
+    border-radius: 22px;
+    box-shadow: 0 26px 60px rgba(0, 0, 0, .5);
+  }
+
+  canvas {
+    display: block;
+    width: 340px;
+    height: 340px;
+    image-rendering: pixelated;
+  }
+
+  .pin {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    width: 100%;
+    justify-content: center;
+  }
+  .pin span { color: var(--muted); font-size: .85rem; }
+  .pin b {
+    color: var(--text);
+    font-size: 1.9rem;
+    letter-spacing: .35rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .url {
+    max-width: 520px;
+    padding: 10px 14px;
+    background: #131c2c;
+    border: 1px solid #24304a;
+    border-radius: 12px;
+    color: #9fb0cc;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: .85rem;
+    text-align: center;
+    word-break: break-all;
+  }
+
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+    color: #93a2ba;
+    font-size: .88rem;
+  }
+
+  .timer {
+    font-variant-numeric: tabular-nums;
+    color: #22d3a6;
+    font-weight: 600;
+  }
+
+  button {
+    padding: 10px 18px;
+    font-size: .9rem;
+    color: #e8eef8;
+    background: #1c2740;
+    border: 1px solid #2b3955;
+    border-radius: 11px;
+    cursor: pointer;
+  }
+  button:hover { background: #23304d; }
+  button:active { transform: translateY(1px); }
+
+  ol {
+    max-width: 460px;
+    margin: 0;
+    padding-left: 22px;
+    color: #93a2ba;
+    font-size: .9rem;
+    line-height: 1.7;
+  }
+  ol b { color: #cfdcef; }
+
+  .expired { color: #ff5f6d; }
+</style>
+</head>
+<body>
+
+<h1>RemotePad</h1>
+<p class="sub">Apunta con la cámara del celular al código</p>
+
+<div class="card">
+  <canvas id="qr" width="29" height="29" aria-label="Código QR de acceso"></canvas>
+  <div class="pin">
+    <span>o escribe el PIN</span>
+    <b id="pin">······</b>
+  </div>
+</div>
+
+<div class="url" id="url"></div>
+
+<div class="meta">
+  <span>Este código caduca en <span class="timer" id="timer">--:--</span></span>
+  <button id="new">Generar uno nuevo</button>
+</div>
+
+<ol>
+  <li>Conecta el celular a la <b>misma red WiFi</b> que esta PC.</li>
+  <li>Abre la <b>cámara</b> y apunta al código: se abrirá el navegador solo.</li>
+  <li>Ya puedes mover el puntero. Si lo prefieres, escribe el PIN a mano.</li>
+</ol>
+
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+'use strict';
+
+const canvas = document.getElementById('qr');
+const context = canvas.getContext('2d');
+const pinLabel = document.getElementById('pin');
+const urlLabel = document.getElementById('url');
+const timer = document.getElementById('timer');
+const dataElement = document.getElementById('data');
+
+let seconds = 0;
+let key = '';
+
+/** Dibuja la matriz del QR: cada modulo es un pixel del canvas. */
+function draw(matrix) {
+  const size = matrix.length;
+  canvas.width = size;
+  canvas.height = size;
+  context.clearRect(0, 0, size, size);
+  for (let row = 0; row < size; row++) {
+    for (let column = 0; column < size; column++) {
+      context.fillStyle = matrix[row][column] ? '#000000' : '#ffffff';
+      context.fillRect(column, row, 1, 1);
+    }
+  }
+}
+
+function apply(data) {
+  if (!data || !data.url) return;
+  draw(data.matrix);
+  urlLabel.textContent = data.url;
+  pinLabel.textContent = data.pin.slice(0, 3) + ' ' + data.pin.slice(3);
+  seconds = data.seconds;
+  key = data.key;
+  document.title = 'RemotePad — ' + data.pin;
+}
+
+function tick() {
+  if (seconds <= 0) {
+    timer.textContent = 'caducado';
+    timer.classList.add('expired');
+    return;
+  }
+  seconds -= 1;
+  const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
+  const rest = String(seconds % 60).padStart(2, '0');
+  timer.textContent = minutes + ':' + rest;
+  timer.classList.remove('expired');
+}
+
+// Datos iniciales que vienen incrustados desde el servidor.
+try {
+  apply(JSON.parse(dataElement.textContent));
+} catch (error) {
+  console.error('No se pudieron leer los datos del QR', error);
+}
+
+setInterval(tick, 1000);
+
+// El servidor avisa por SSE cada vez que la clave se renueva: asi el panel
+// siempre muestra un QR valido sin recargar la pagina.
+const stream = new EventSource('qr/stream');
+stream.onmessage = (event) => {
+  try {
+    apply(JSON.parse(event.data));
+  } catch (error) { /* mensaje incompleto: se ignora */ }
+};
+
+document.getElementById('new').addEventListener('click', async () => {
+  await fetch('qr/new', { method: 'POST' });
+});
+</script>
+</body>
+</html>

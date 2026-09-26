@@ -1,0 +1,39 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+ENV/
+
+# Empaquetado
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Temporales de pip (se crean al instalar en entornos con restricciones)
+.pip-tmp/
+
+# Herramientas de edicion
+.vscode/
+.idea/
+*.swp
+*~
+
+# Sistema operativo
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Registros y volcados de las pruebas
+*.log
+qr_consola.txt
+qr_check.png
+
+# Secretos y configuracion local (no deberia haber, pero por si acaso)
+*.local
+.env

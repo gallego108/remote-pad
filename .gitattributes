@@ -1,0 +1,14 @@
+# Normaliza los finales de linea al guardar: en el repositorio siempre LF,
+# y Git se encarga de convertirlos al hacer el checkout en cada sistema.
+# Esto evita que todo el proyecto aparezca modificado segun el editor.
+
+* text=auto
+
+# Los scripts de Windows necesitan CRLF para funcionar en cmd.exe.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binarios: no tocar.
+*.png binary
+*.jpg binary
+*.ico binary

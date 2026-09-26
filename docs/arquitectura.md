@@ -1,0 +1,137 @@
+# Arquitectura
+
+## Vista general
+
+RemotePad tiene dos piezas: un **servidor** que corre en la PC (Python) y una
+**aplicación web** que abre el celular en su navegador. No hay app que instalar
+en el teléfono.
+
+```
+   CELULAR (Chrome)                          PC (Windows)
+ ┌────────────────────┐                  ┌──────────────────────────────┐
+ │  index.html        │                  │  app.py  (aiohttp)           │
+ │  styles.css        │   WebSocket      │   ├─ autenticación (PIN/QR)  │
+ │  app.js            │ ◄──────────────► │   ├─ cola de eventos         │
+ │   ├─ gestos        │      JSON        │   ├─ bucle de animación      │
+ │   └─ interfaz      │                  │   └─ /qr (panel de la PC)    │
+ └────────────────────┘                  │            │                 │
+                                         │            ▼                 │
+                                         │  controller.py               │
+                                         │   ├─ puntero y clics         │
+                                         │   ├─ teclado                 │
+                                         │   └─ multimedia              │
+                                         │            │                 │
+                                         │            ▼                 │
+                                         │  native_input.py             │
+                                         │   └─ SendInput / SetCursorPos│
+                                         └──────────────────────────────┘
+```
+
+## Por qué así
+
+### Un servidor web en vez de una app nativa
+
+Servir una PWA desde la propia PC evita compilar y distribuir un APK, funciona
+igual en Android que en iPhone y no necesita certificados ni tienda de
+aplicaciones. El coste es que el celular y la PC deben estar en la misma red,
+que es exactamente el caso de uso.
+
+### Coordenadas relativas, no absolutas
+
+El celular manda **desplazamientos** (`mouse_rel_move`), no posiciones. Con
+posiciones absolutas habría que conocer la resolución y el puntero "saltaría"
+al tocar la pantalla, además de depender de la orientación del teléfono.
+
+La sensibilidad se normaliza dividiendo por la **altura** de la pantalla:
+
+```python
+dx_enviado = (pixeles_del_dedo / altura_de_pantalla) * sensibilidad
+```
+
+Así el mismo ajuste (1,6× por defecto) se siente igual en un portátil de
+1366×768 que en un monitor 4K.
+
+### El servidor acumula y aplica a ritmo constante
+
+El hilo de red puede recibir ráfagas (WiFi irregular) y el sistema operativo no
+necesita 500 eventos por segundo. El bucle de animación:
+
+1. vacía la cola de movimientos y **suma** todos los desplazamientos pendientes;
+2. aplica el total de una vez;
+3. duerme ~8-16 ms.
+
+Si el celular va por delante, no se pierde distancia: se consolida. Los **clics
+van en su propia cola y se ejecutan sin esperar**, para que pulsar un botón
+pequeño sea fiable.
+
+### El scroll se convierte a "clics" de rueda
+
+Windows entiende la rueda en unidades de 120. El cliente envía píxeles de
+deslizamiento y el controlador los acumula, guardando la parte fraccionaria,
+para que un deslizamiento lento también acabe moviendo la página.
+
+## Módulos
+
+| Archivo | Responsabilidad |
+|---|---|
+| `server/app.py` | Servidor HTTP/WebSocket, autenticación, difusión, bucle de animación |
+| `server/controller.py` | Traduce acciones en llamadas a la capa nativa; mantiene el estado del puntero y del arrastre |
+| `server/native_input.py` | Única dependencia del sistema operativo: `SendInput`, `SetCursorPos`, `GetAsyncKeyState` |
+| `server/qr.py` | Codificador de QR completo (rejilla, Reed-Solomon, máscaras) y dibujo en consola |
+| `web/app.js` | Motor de gestos y comunicación del cliente |
+| `web/qr.html` | Panel local de la PC con el QR en grande |
+
+## Estados del controlador
+
+El puntero se sigue con una posición "virtual" propia porque `pynput` y
+`SendInput` no informan de dónde está el cursor:
+
+- **Arrastre por el celular**: mientras `_drag_button` no sea `None`, manda el
+  celular y no se resincroniza nada.
+- **Sin arrastre**: si la posición real difiere de la virtual, se adopta la
+  real. Así, si mueves el mouse físico, la app no "pelea" contigo.
+- **Borde de pantalla**: al llegar al límite se descarta el desplazamiento
+  sobrante y se resincroniza, para que al cambiar de dirección el puntero
+  responda al instante.
+
+### Estados de la interfaz del celular
+
+```
+        (toque corto)
+   ┌────────────────────► clic izquierdo
+   │
+pointer ──(pulsación larga)──► dragging ──(levantar)──► pointer
+   │                              ▲
+   └──(doble toque)──► locked ────┘
+                        │
+                        └──(toque)──► suelta y vuelve a pointer
+```
+
+- **dragging**: se mantiene el botón mientras el dedo no se levante.
+- **locked**: se mantiene el botón entre gestos (arrastre cómodo para
+  seleccionar texto o mover ventanas largas); se sale con un toque o pulsando
+  **Soltar**.
+
+En ambos casos, si el celular se desconecta o pasa a segundo plano, el servidor
+**suelta** botones y teclas automáticamente para no dejar la PC bloqueada.
+
+## Concurrencia
+
+- Un único bucle de eventos de asyncio para la red.
+- Un `ThreadPoolExecutor` de 3 hilos para las llamadas al sistema operativo,
+  porque `SendInput` es bloqueante.
+- Los eventos de puntero **no** pasan por el ejecutor: los aplica el bucle de
+  animación, ya consolidados.
+- Los valores que van a un hilo se pasan **como argumentos por defecto** en el
+  `run_in_executor`; de lo contrario el hilo leería variables ya reasignadas por
+  el siguiente mensaje.
+
+## Limitaciones conocidas
+
+- Solo funciona en **Windows** (la capa nativa usa la API Win32).
+- **Ctrl+Alt+Supr** no se puede simular: Windows lo reserva al sistema. La app
+  lo avisa en lugar de fallar en silencio.
+- El **nivel de volumen** no se puede leer ni fijar desde una aplicación
+  normal: se sube o baja a pasos de tecla multimedia.
+- Sin cifrado: el tráfico va en claro por la red local. Ver
+  [seguridad.md](seguridad.md).

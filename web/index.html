@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>RemotePad — Touchpad remoto</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f17">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============================ ACCESO ============================ -->
+<div id="auth" class="overlay">
+  <form id="auth-card" class="card" autocomplete="off">
+    <div class="logo">
+      <svg viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="6" y="3" width="36" height="42" rx="10" fill="none" stroke="currentColor" stroke-width="3"/>
+        <path d="M24 9v13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <path d="M17 14h14" stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+      </svg>
+    </div>
+    <h1>RemotePad</h1>
+    <p class="hint">Escanea con la cámara el código QR que muestra la PC, o escribe aquí el PIN.</p>
+    <input id="pin-input" class="pin" type="tel" inputmode="numeric" pattern="[0-9]*"
+           maxlength="6" placeholder="• • • • • •" autocomplete="one-time-code" aria-label="PIN de acceso">
+    <p id="auth-error" class="error" hidden></p>
+    <button id="auth-btn" type="submit" class="primary">Conectar</button>
+    <p id="pin-live" class="pin-live" hidden>PIN actual en la PC: <b id="pin-live-value"></b></p>
+    <p class="tiny">El PIN y el código QR se renuevan cada 5 minutos.</p>
+  </form>
+</div>
+
+<!-- ============================ APLICACIÓN ============================ -->
+<main id="app" hidden>
+
+  <header class="statusbar">
+    <span id="status-dot" class="dot offline"></span>
+    <span id="status-text">Conectando…</span>
+    <span id="status-latency" class="latency"></span>
+    <span class="spacer"></span>
+    <button id="pin-btn" class="chip" title="Ver PIN actual en la PC">
+      PIN <b id="pin-chip">······</b>
+    </button>
+    <button id="mode-btn" class="chip" title="Modo del touchpad">Puntero</button>
+  </header>
+
+  <section id="pad" class="pad" aria-label="Superficie táctil">
+    <div id="pad-hint" class="pad-hint">
+      <b>Desliza</b> para mover el puntero<br>
+      <b>Toca</b> = clic izquierdo · <b>2 dedos</b> = scroll<br>
+      <b>2 dedos tocando</b> = clic derecho · <b>3 dedos</b> = botón central<br>
+      <b>Mantén pulsado</b> o <b>doble toque y desliza</b> = arrastrar
+    </div>
+    <div id="cursor" class="cursor"></div>
+    <div id="drag-ring" class="drag-ring" hidden></div>
+  </section>
+
+  <nav class="quickbar">
+    <button class="qbtn" data-quick="click">
+      <svg viewBox="0 0 24 24"><path d="M9 3.5a1.6 1.6 0 0 1 3.2 0V11h1.1V7.2a1.6 1.6 0 0 1 3.2 0V12h1.1v-2.6a1.6 1.6 0 0 1 3.2 0v6.1c0 3.6-2.4 6.5-6.4 6.5-2.6 0-4.2-1-5.6-3l-3-4.4c-.7-1-.3-2.3.8-2.7.8-.3 1.6 0 2.1.6L9 13z"/></svg>
+      <span>Clic izq.</span>
+    </button>
+    <button class="qbtn" data-quick="right">
+      <svg viewBox="0 0 24 24"><path d="M9 3.5a1.6 1.6 0 0 1 3.2 0V11h1.1V7.2a1.6 1.6 0 0 1 3.2 0V12h1.1v-2.6a1.6 1.6 0 0 1 3.2 0v6.1c0 3.6-2.4 6.5-6.4 6.5-2.6 0-4.2-1-5.6-3l-3-4.4c-.7-1-.3-2.3.8-2.7.8-.3 1.6 0 2.1.6L9 13z"/></svg>
+      <span>Clic der.</span>
+    </button>
+    <button class="qbtn" data-quick="dump">
+      <svg viewBox="0 0 24 24"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 18h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Soltar</span>
+    </button>
+    <button class="qbtn" data-quick="reset">
+      <svg viewBox="0 0 24 24"><path d="M12 5V2L7 6l5 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+      <span>Reconectar</span>
+    </button>
+  </nav>
+
+  <nav class="toolbar">
+    <button class="tool" data-panel="keyboard"><span>⌨️</span>Teclado</button>
+    <button class="tool" data-panel="shortcuts"><span>⚡</span>Atajos</button>
+    <button class="tool" data-panel="media"><span>🎵</span>Multimedia</button>
+    <button class="tool" data-panel="presentation"><span>📊</span>Presentar</button>
+    <button class="tool" data-panel="settings"><span>⚙️</span>Ajustes</button>
+  </nav>
+</main>
+
+<!-- ============================ PANELES ============================ -->
+<div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+
+<section class="sheet" id="sheet-keyboard" hidden>
+  <header><h2>Teclado</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <textarea id="kb-text" rows="3" placeholder="Escribe aquí y aparecerá en la PC…"
+              autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
+    <div class="keys">
+      <button class="key" data-key="backspace">⌫ Borrar</button>
+      <button class="key" data-key="enter">⏎ Enter</button>
+      <button class="key" data-key="tab">⇥ Tab</button>
+      <button class="key" data-key="esc">Esc</button>
+      <button class="key" data-key="up">↑</button>
+      <button class="key" data-key="down">↓</button>
+      <button class="key" data-key="left">←</button>
+      <button class="key" data-key="right">→</button>
+      <button class="key" data-key="delete">Supr</button>
+      <button class="key" data-key="home">Inicio</button>
+      <button class="key" data-key="end">Fin</button>
+      <button class="key" data-key="page_up">RePág</button>
+      <button class="key" data-key="page_down">AvPág</button>
+      <button class="key" data-key="space">Espacio</button>
+    </div>
+    <p class="tiny">El texto se envía tal cual, respetando acentos y símbolos.</p>
+  </div>
+</section>
+
+<section class="sheet" id="sheet-shortcuts" hidden>
+  <header><h2>Atajos de teclado</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <div class="grid">
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="c">Copiar</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="v">Pegar</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="x">Cortar</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="z">Deshacer</button>
+      <button class="key" data-hotkey="ctrl" data-mods="shift" data-combo="z">Rehacer</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="a">Seleccionar todo</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="s">Guardar</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="f">Buscar</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="p">Imprimir</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="w">Cerrar pestaña</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="t">Nueva pestaña</button>
+      <button class="key" data-hotkey="ctrl" data-mods="" data-combo="r">Recargar</button>
+      <button class="key" data-hotkey="alt" data-mods="" data-combo="tab">Alt + Tab</button>
+      <button class="key" data-hotkey="alt" data-mods="shift" data-combo="tab">Alt + Shift + Tab</button>
+      <button class="key" data-hotkey="alt" data-mods="" data-combo="f4">Cerrar ventana</button>
+      <button class="key" data-hotkey="f11" data-mods="" data-combo="">Pantalla completa</button>
+      <button class="key" data-hotkey="win" data-mods="" data-combo="">Menú Inicio</button>
+      <button class="key" data-hotkey="win" data-mods="" data-combo="d">Escritorio</button>
+      <button class="key" data-hotkey="win" data-mods="" data-combo="e">Explorador</button>
+      <button class="key" data-hotkey="win" data-mods="" data-combo="l">Bloquear PC</button>
+      <button class="key" data-hotkey="ctrl" data-mods="alt" data-combo="delete">Ctrl+Alt+Supr</button>
+      <button class="key" data-hotkey="print_screen" data-mods="" data-combo="">Captura pantalla</button>
+    </div>
+    <p class="tiny">Ctrl+Alt+Supr lo bloquea Windows por seguridad y no se puede simular.</p>
+  </div>
+</section>
+
+<section class="sheet" id="sheet-media" hidden>
+  <header><h2>Multimedia y volumen</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <div class="row3">
+      <button class="key big" data-media="prev">⏮</button>
+      <button class="key big" data-media="play_pause">⏯</button>
+      <button class="key big" data-media="next">⏭</button>
+    </div>
+    <div class="vol">
+      <button class="key" data-volume="-1">🔉 −</button>
+      <button class="key" data-media="mute">🔇 Silencio</button>
+      <button class="key" data-volume="1">🔊 +</button>
+    </div>
+    <div class="vol">
+      <button class="key" data-volume="-5">Bajar 5 pasos</button>
+      <button class="key" data-volume="5">Subir 5 pasos</button>
+    </div>
+    <button class="key" data-media="stop">⏹ Detener</button>
+    <p class="tiny">Funciona con Spotify, YouTube, VLC… siempre que estén en primer plano.</p>
+  </div>
+</section>
+
+<section class="sheet" id="sheet-presentation" hidden>
+  <header><h2>Presentaciones</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <div class="row2">
+      <button class="key big" data-pres="prev">◀ Anterior</button>
+      <button class="key big" data-pres="next">Siguiente ▶</button>
+    </div>
+    <div class="row3">
+      <button class="key" data-pres="start">▶ Iniciar (F5)</button>
+      <button class="key" data-pres="end">✕ Salir</button>
+      <button class="key" data-pres="blank">◼ En blanco</button>
+    </div>
+    <div class="row3">
+      <button class="key" data-pres="black">Negro</button>
+      <button class="key" data-pres="white">Blanco</button>
+      <button class="key" data-hotkey="esc" data-mods="" data-combo="">Esc</button>
+    </div>
+    <p class="tiny">Compatible con PowerPoint, Impress y visores basados en teclado.</p>
+  </div>
+</section>
+
+<section class="sheet" id="sheet-settings" hidden>
+  <header><h2>Ajustes</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <label class="setting">
+      <span>Velocidad del puntero <b id="v-speed">1.6×</b></span>
+      <input id="s-speed" type="range" min="0.4" max="4" step="0.1" value="1.6">
+    </label>
+    <label class="setting">
+      <span>Velocidad del scroll <b id="v-scroll">1.0×</b></span>
+      <input id="s-scroll" type="range" min="0.3" max="4" step="0.1" value="1">
+    </label>
+    <label class="setting switch">
+      <span>Aceleración (mover rápido = mover más)</span>
+      <input id="s-accel" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Desplazamiento natural (como en el celular)</span>
+      <input id="s-natural" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Tocar = clic izquierdo</span>
+      <input id="s-tap" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Doble toque y arrastrar (modo arrastre)</span>
+      <input id="s-draglock" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Vibración al pulsar</span>
+      <input id="s-haptics" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Zona extra sensible en los bordes</span>
+      <input id="s-edges" type="checkbox" checked>
+    </label>
+    <div class="sheet-actions">
+      <button class="key" id="btn-fullscreen">Pantalla completa</button>
+      <button class="key" id="btn-logout">Olvidar este dispositivo</button>
+    </div>
+    <p class="tiny" id="about"></p>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
