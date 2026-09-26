@@ -71,8 +71,10 @@ QR_GRACE_SECONDS = 20.0
 QR_PRE_REFRESH_SECONDS = 20.0   # antelacion con que el panel pide el siguiente
 
 # Sube al cambiar la parte web: sirve para comprobar en el celular que se esta
-# ejecutando la version nueva y no una copia guardada.
-APP_VERSION = "1.3.1"
+# ejecutando la version nueva y no una copia guardada. Debe coincidir con la
+# constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
+# recarga (y avisa) para que el celular no se quede con JavaScript viejo.
+APP_VERSION = "1.4.0"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -957,11 +959,15 @@ def build_app(gateway: Gateway) -> web.Application:
         Si la peticion trae la clave del QR (?k=...), se inyecta en el propio
         HTML como etiqueta meta. Asi el acceso no depende de que el navegador
         conserve el parametro en la direccion: algunos visores de camara lo
-        recortan al redirigir. Ademas esa respuesta no se cachea.
+        recortan al redirigir.
+
+        Esta respuesta se sirve SIEMPRE sin cache. Es la unica forma segura de
+        que el celular no se quede ejecutando un app.js antiguo guardado: con
+        una copia vieja, la pagina carga, pide el PIN y el servidor recibe
+        acciones que ya no existen («accion desconocida»).
         """
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         key = request.query.get("k", "")
-        headers = {"Cache-Control": "no-store"} if key else {}
 
         if key:
             # Comprobacion previa: si la clave ya no vale se avisa en la propia
@@ -976,9 +982,20 @@ def build_app(gateway: Gateway) -> web.Application:
                 f'<meta name="remotepad-version" content="{APP_VERSION}">'
             )
             html = html.replace("<!-- remoto -->", meta)
+        else:
+            html = html.replace(
+                "<!-- remoto -->",
+                f'<meta name="remotepad-version" content="{APP_VERSION}">',
+            )
 
-        return web.Response(text=html, content_type="text/html",
-                            charset="utf-8", headers=headers)
+        return web.Response(
+            text=html, content_type="text/html", charset="utf-8",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
     async def static_file(request: web.Request) -> web.StreamResponse:
         name = request.match_info["name"]
@@ -1164,6 +1181,12 @@ async def run(args: argparse.Namespace) -> None:
         print("Prueba con otro puerto:  python app.py --port 8899\n")
         await runner.cleanup()
         return
+
+    log.info("RemotePad %s en marcha (puerto %d)", APP_VERSION, args.port)
+    if not args.no_auth and not args.no_qr:
+        log.info("Comprueba en el celular que la app muestre la version %s "
+                 "(Ajustes); si muestra otra, borra los datos del sitio.",
+                 APP_VERSION)
 
     shown_host = args.host
     if shown_host in ("0.0.0.0", "::"):

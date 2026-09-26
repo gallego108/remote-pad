@@ -1,5 +1,49 @@
 # Historial de cambios
 
+## 1.4.0
+
+Imposible quedarse con una versión antigua de la aplicación en el celular.
+
+Síntoma reportado: en el celular aparecía «no se pudo conectar: acción
+desconocida auth». Ese texto lo genera el servidor cuando recibe una acción que
+no reconoce, y el código actual **no puede** responder eso a una acción `auth`:
+lo que ocurría es que el celular ejecutaba un **`app.js` guardado de una versión
+anterior** (de antes de que existiera el acceso por QR), que no tenía el manejo
+de `auth` y enviaba esa acción suelta. La página cargaba, pedía el PIN y el
+servidor no registraba nada de QR: todo encaja.
+
+### Corregido
+
+- **Detector de versión en la propia página**: el servidor inyecta siempre su
+  versión en el HTML, y un pequeño script del `<head>` compara con la constante
+  `REMOTEPAD_WEB`. Si no cuadran (o si la página es tan antigua que no trae la
+  etiqueta), **recarga con `?v=<versión>`**, que además salta la caché. Si ya lo
+  intentó y sigue el desajuste, avisa en pantalla con la instrucción de vaciar
+  la caché, sin entrar en bucle.
+- La página principal se sirve **siempre sin caché** (`no-store`, `no-cache`,
+  `Pragma` y `Expires`), con o sin QR.
+- El *service worker* pide **siempre a la red** el código de la aplicación
+  (`app.js`, `styles.css`, documentos) con `cache: 'no-store'`, usando la caché
+  solo como respaldo sin conexión. Sube a `remotepad-v4`.
+- La versión de la parte web y la del servidor deben coincidir; hay una prueba
+  que lo comprueba, porque un desajuste haría recargar la página en bucle.
+
+### Añadido
+
+- El servidor avisa al arrancar de su versión y recuerda comprobarla en
+  Ajustes del celular: en el registro se lee
+  «Comprueba en el celular que la app muestre la versión 1.4.0».
+- `tools/test_version_cache.py`: 16 comprobaciones de coherencia de versiones,
+  cabeceras sin caché y estrategia del *service worker*.
+
+### Nota de diagnóstico
+
+Se descartó primero la hipótesis de que hubiera **otro servidor** en la red:
+se listaron todos los servicios escuchando y se envió a cada uno la acción
+`auth` para ver cuál producía el mensaje. Ninguno lo producía, y el servidor del
+puerto 8765 era la versión correcta (1.3.1) con `/api/qr-login` respondiendo.
+Eso dejó el cliente cacheado como única explicación posible.
+
 ## 1.3.1
 
 Arregla que el código QR dejara de valer justo al escanearlo.

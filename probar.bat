@@ -69,6 +69,8 @@ python tools\test_qr_login.py %PORT%
 if errorlevel 1 set RESULT=1
 python tools\test_qr_rotacion.py %PORT%
 if errorlevel 1 set RESULT=1
+python tools\test_version_cache.py %PORT%
+if errorlevel 1 set RESULT=1
 
 REM Paramos el servidor de pruebas.
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr LISTENING') do (

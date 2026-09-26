@@ -101,6 +101,37 @@ puerto (`abrir-firewall.bat 8899`); el rango que abre el script cubre de 8765 a
 - Si tienes varios servidores abiertos, asegúrate de estar mirando la consola
   del que escucha en el puerto que abriste.
 
+### El celular pide el PIN en vez de entrar con el QR
+
+Este síntoma significa que el celular llega a la PC (red y Firewall correctos)
+pero **no está ejecutando el canje del QR**: casi siempre es una **copia antigua
+de la aplicación guardada en el propio teléfono**.
+
+Un caso real y muy confuso: en el celular aparecía
+**«acción desconocida: auth»**. Ese mensaje lo genera el servidor cuando recibe
+una acción que no reconoce, y el código actual **no puede** responder eso a una
+acción `auth`. Lo que pasaba es que el teléfono ejecutaba un `app.js` de una
+versión anterior (de antes de que existiera el QR), que enviaba `auth` sin el
+manejo correspondiente. Es decir: **el mensaje no venía de la versión instalada,
+sino de la copia vieja del navegador**.
+
+Desde la versión 1.4.0 esto se detecta y se corrige solo:
+
+- el servidor inyecta su versión en el HTML y la página, si no coincide con la
+  suya, **se recarga con `?v=<versión>`** saltando la caché;
+- si aun así no cuadra (porque el HTML viejo tampoco trae la etiqueta), muestra
+  un aviso pidiendo vaciar la caché, sin entrar en bucle;
+- el *service worker* pide el código de la app **siempre a la red**;
+- en *Ajustes* de la app se ve la **versión** que está ejecutando el celular.
+
+Si te ocurre en un teléfono que ya tenía la app instalada:
+
+1. Recarga la página (el propio aviso te lo pedirá).
+2. Si sigue igual: Chrome → menú ⋮ → *Configuración del sitio* → **Borrar
+   datos**, y recarga.
+3. Comprueba en *Ajustes* que dice **«versión 1.4.0»**. Si no aparece, sigues
+   con la copia antigua.
+
 ### Al escanear el QR, la página carga pero pide el PIN
 
 Este síntoma —**la página abre bien, pero pide el código**— significa que el

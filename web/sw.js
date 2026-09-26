@@ -9,7 +9,7 @@
  * avisa a las pestanas abiertas para que se recarguen solas.
  */
 
-const CACHE = 'remotepad-v3';
+const CACHE = 'remotepad-v4';
 const FILES = [
   './',
   'index.html',
@@ -44,7 +44,26 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;            // el canje del QR es POST
   if (request.url.includes('/ws')) return;         // el WebSocket no se toca
   if (request.url.includes('/qr')) return;         // panel de la PC, sin cache
-  if (request.url.includes('?k=')) return;         // enlace del QR: siempre fresco
+  if (request.url.includes('?k=')) return;         // enlace del QR: fresco
+  if (request.url.includes('?v=')) return;         // recarga forzada: fresca
+
+  // El codigo de la aplicacion se pide SIEMPRE a la red: es lo que evita que
+  // el celular se quede con un app.js antiguo (el fallo mas costoso de
+  // encontrar de todo el proyecto: la pagina cargaba y el servidor recibia
+  // acciones que ya no existian).
+  const critico = request.destination === 'script'
+    || request.destination === 'style'
+    || request.destination === 'document'
+    || request.url.endsWith('app.js')
+    || request.url.endsWith('styles.css');
+
+  if (critico) {
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
 
   event.respondWith(
     fetch(request)

@@ -12,6 +12,54 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="styles.css">
+<script>
+/* ---------------------------------------------------------------------
+   Version de la parte web. El servidor inyecta la suya en la etiqueta meta
+   "remotepad-version"; si no coincide con esta constante, el navegador esta
+   ejecutando un JavaScript viejo guardado (cache o service worker antiguo).
+   En ese caso se recarga con ?v=<version>, que ademas salta la cache, y si
+   aun asi no cuadra se avisa en pantalla para vaciarla a mano.
+
+   Existe por un caso real: un celular se quedo con el app.js de una version
+   anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
+   que ya no existen ("accion desconocida: auth").
+   --------------------------------------------------------------------- */
+const REMOTEPAD_WEB = '1.4.0';
+(function () {
+  const meta = document.querySelector('meta[name="remotepad-version"]');
+  const servidor = meta ? meta.content : '';
+  // Si no hay meta, la pagina viene de una version anterior a este mecanismo:
+  // tambien hay que recargar.
+  if (servidor === REMOTEPAD_WEB) return;
+
+  const clave = 'remotepad-recargado-' + servidor;
+  let yaRecargado = false;
+  try { yaRecargado = sessionStorage.getItem(clave) === '1'; } catch (e) {}
+
+  if (yaRecargado) {
+    // Ya se intento y sigue el desajuste: se avisa sin entrar en bucle.
+    document.addEventListener('DOMContentLoaded', function () {
+      const aviso = document.createElement('div');
+      aviso.style.cssText = 'position:fixed;inset:0;z-index:99;display:grid;'
+        + 'place-content:center;padding:24px;text-align:center;background:#080b11;'
+        + 'color:#e8eef8;font:16px/1.6 system-ui,sans-serif';
+      aviso.innerHTML = '<div><b>Actualiza esta pagina</b><br><br>'
+        + 'El navegador tiene guardada una version antigua de la aplicacion '
+        + '(la PC usa la ' + (servidor || '1.4.0') + ').<br><br>Manten pulsado '
+        + 'el boton de recargar del navegador y elige <b>Vaciar cache y '
+        + 'recargar</b>.</div>';
+      document.body.appendChild(aviso);
+    });
+    return;
+  }
+
+  try { sessionStorage.setItem(clave, '1'); } catch (e) {}
+  // ?v= obliga a pedir la pagina y sus recursos saltando cualquier cache.
+  // stop() evita que el resto de la pagina se cargue con el codigo viejo.
+  window.stop();
+  location.replace(location.pathname + '?v=' + encodeURIComponent(servidor || '0'));
+})();
+</script>
 </head>
 <body>
 
