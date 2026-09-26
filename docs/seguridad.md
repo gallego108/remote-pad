@@ -36,6 +36,11 @@ Ver [qr.md](qr.md). Su clave **vale 3 minutos**, se invalida al primer canje y s
 compara también en tiempo constante. El panel de la PC muestra siempre uno
 vigente, pero una foto del código deja de servir a los pocos minutos.
 
+Durante **20 segundos adicionales** (`QR_GRACE_SECONDS`) se sigue aceptando el
+código anterior, para que la renovación no haga fallar un escaneo que llegó un
+instante tarde. Es una ventana pequeña y acotada, y cada código sigue sirviendo
+**una sola vez**.
+
 ### Detener el servicio
 
 - **Desde el celular**: el botón de *Ajustes* pide la parada por el WebSocket, y

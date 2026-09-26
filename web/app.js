@@ -989,6 +989,22 @@ async function qrLogin() {
     history.replaceState(null, '', location.pathname);
   } catch (_) { /* algunos navegadores no lo permiten */ }
 
+  const resultado = await canjear(key);
+  if (resultado.ok) return true;
+
+  // El codigo pudo renovarse en el servidor justo mientras se escaneaba: el
+  // panel los cambia cada 3 minutos. Si este celular ya estaba autorizado se
+  // pide uno nuevo y se reintenta, sin volver a apuntar con la camara.
+  if (resultado.status === 403 && await recuperarConToken()) {
+    return true;
+  }
+
+  showAuthError(resultado.mensaje);
+  return false;
+}
+
+/** Canjea una clave del QR. Devuelve {ok} o {ok:false, status, mensaje}. */
+async function canjear(key) {
   let response;
   try {
     response = await fetch('api/qr-login', {
@@ -997,38 +1013,75 @@ async function qrLogin() {
       body: JSON.stringify({ key }),
     });
   } catch (_) {
-    // Ni siquiera se ha podido hablar con el servidor.
-    showAuthError('No se pudo conectar con la PC para validar el código. '
-      + (appVersion() ? '(version ' + appVersion() + ') ' : '')
-      + 'Comprueba que el servidor siga encendido.');
-    return false;
+    return {
+      ok: false,
+      status: 0,
+      mensaje: 'No se pudo conectar con la PC para validar el código. '
+        + (appVersion() ? '(versión ' + appVersion() + ') ' : '')
+        + 'Comprueba que el servidor siga encendido.',
+    };
   }
 
   if (response.status === 403) {
-    // El servidor ha respondido: la red funciona. El codigo ya no vale.
-    showAuthError('El código caducó o ya se usó (duran 3 minutos). '
-      + 'Mira la PC: aparece uno nuevo cada 3 minutos. Escanea ese.');
-    return false;
+    return {
+      ok: false,
+      status: 403,
+      mensaje: 'El código caducó o ya se usó (duran 3 minutos). Mira la PC: '
+        + 'aparece uno nuevo cada 3 minutos. Escanea ese.',
+    };
   }
-
   if (!response.ok) {
-    showAuthError('La PC rechazó el código (error ' + response.status + '). '
-      + 'Escanea el código que muestra ahora mismo.');
-    return false;
+    return {
+      ok: false,
+      status: response.status,
+      mensaje: 'La PC rechazó el código (error ' + response.status + '). '
+        + 'Escanea el código que muestra ahora mismo.',
+    };
   }
 
   try {
     const data = await response.json();
     if (data && data.ok && data.token) {
       try { localStorage.setItem(TOKEN_KEY, data.token); } catch (_) {}
-      return true;
+      return { ok: true };
     }
-    showAuthError('La PC no devolvió un acceso válido. Vuelve a escanear el '
-      + 'código.');
+    return {
+      ok: false,
+      status: response.status,
+      mensaje: 'La PC no devolvió un acceso válido. Vuelve a escanear el código.',
+    };
   } catch (_) {
-    showAuthError('Respuesta inesperada de la PC. Vuelve a escanear el código.');
+    return {
+      ok: false,
+      status: response.status,
+      mensaje: 'Respuesta inesperada de la PC. Vuelve a escanear el código.',
+    };
   }
-  return false;
+}
+
+/**
+ * Pide un QR nuevo con el token guardado y lo canjea al instante.
+ *
+ * Red de seguridad contra la carrera de la rotacion: el codigo que el usuario
+ * escaneo cambio mientras lo leia, pero como este celular ya tenia acceso se
+ * le entrega uno nuevo sin que tenga que volver a apuntar con la camara.
+ */
+async function recuperarConToken() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return false;
+  try {
+    const respuesta = await fetch('api/qr-refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    if (!respuesta.ok) return false;
+    const datos = await respuesta.json();
+    if (!datos || !datos.key) return false;
+    return (await canjear(datos.key)).ok;
+  } catch (_) {
+    return false;
+  }
 }
 
 /** Muestra el error de acceso y deja a mano la entrada del PIN. */

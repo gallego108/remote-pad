@@ -60,9 +60,19 @@ DEFAULT_PORT = 8765
 PIN_ROTATE_SECONDS = 300.0   # cada cuanto cambia el PIN de seguridad
 QR_VALID_SECONDS = 180.0     # cuanto vale cada codigo QR (3 minutos, un solo uso)
 
+# Margen de gracia y renovacion de los codigos QR.
+#
+# Por que existe: el codigo visible cambia cada QR_VALID_SECONDS, y si alguien
+# esta escaneando justo en ese momento, el codigo que acaba de leer dejaria de
+# valer y el acceso fallaria. Con este margen se sigue aceptando el codigo
+# anterior unos segundos despues de rotar, que es justo el tiempo que el canje
+# puede llegar tarde por el retardo de la red o del navegador.
+QR_GRACE_SECONDS = 20.0
+QR_PRE_REFRESH_SECONDS = 20.0   # antelacion con que el panel pide el siguiente
+
 # Sube al cambiar la parte web: sirve para comprobar en el celular que se esta
 # ejecutando la version nueva y no una copia guardada.
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -245,6 +255,9 @@ class Gateway:
         self._pin_generated = time.monotonic()
         self.login_key = new_login_key()      # clave del enlace del codigo QR
         self.login_key_generated = self._pin_generated
+        # Claves anteriores que se siguen aceptando unos segundos (margen de
+        # gracia): (clave, momento de la rotacion, ya_usada).
+        self._key_history: "deque[tuple[str, float, bool]]" = deque()
         self._key_failures: dict[str, list[float]] = {}
         self._tokens: dict[str, float] = {}
         self._pin_failures: dict[str, list[float]] = {}
@@ -294,8 +307,9 @@ class Gateway:
         El codigo QR vale 3 minutos.
 
         Pasado ese tiempo se genera otro automaticamente, de modo que el panel
-        de la PC siempre muestra un codigo vigente. Es de un solo uso: al
-        canjearlo tambien se renueva aqui.
+        de la PC siempre muestra un codigo vigente. El anterior NO se invalida
+        de golpe: queda unos segundos en el margen de gracia por si el celular
+        estaba escaneandolo justo en ese momento.
         """
         if self.shutting_down:
             return
@@ -303,11 +317,64 @@ class Gateway:
             return
         self.refresh_login_key()
 
-    def refresh_login_key(self) -> str:
-        """Genera un QR nuevo (lo usa el panel de la PC y la rotacion)."""
+    def refresh_login_key(self, internal: bool = False) -> str:
+        """
+        Genera un QR nuevo.
+
+        Si `internal` es False (rotacion automatica, boton del panel), la clave
+        anterior pasa al margen de gracia: asi no falla un canje que llego
+        tarde por unos segundos. Si es True, la rotacion viene de haber canjeado
+        o reservado una clave, y entonces la anterior se descarta directamente
+        (guardarla en el historial solo serviria para reutilizarla).
+        """
+        ahora = time.monotonic()
+        if self.login_key and not internal:
+            self._key_history.append((self.login_key, ahora, False))
+        self._podar_historial(ahora)
         self.login_key = new_login_key()
-        self.login_key_generated = time.monotonic()
+        self.login_key_generated = ahora
         self.broadcast({"t": "qr_key", "key": self.login_key})
+        return self.login_key
+
+    def _podar_historial(self, ahora: Optional[float] = None) -> None:
+        """Descarta las claves antiguas que ya pasaron el margen de gracia."""
+        if ahora is None:
+            ahora = time.monotonic()
+        while self._key_history:
+            clave, nacida, usada = self._key_history[0]
+            if usada or (ahora - nacida) > QR_GRACE_SECONDS:
+                self._key_history.popleft()
+            else:
+                break
+
+    def _marcar_clave_usada(self, clave: str) -> None:
+        """
+        Invalida una clave ya canjeada, este en el historial o sea la vigente.
+
+        Una clave usada no se conserva en el margen de gracia: si se guardara,
+        un segundo intento con el mismo enlace volveria a encontrar la clave y
+        habria que rechazarlo expresamente. Se descarta y punto.
+        """
+        self._key_history = deque(
+            (c, t, u) for c, t, u in self._key_history if c != clave
+        )
+        if self.login_key == clave:
+            self.refresh_login_key(internal=True)
+
+    def reservar_clave_actual(self) -> str:
+        """
+        Entrega una clave nueva para un cliente ya autorizado (recuperacion).
+
+        La clave vigente se marca como usada (para que el enlace que ya circulo
+        no sirva) y se devuelve una NUEVA, que solo conoce este cliente: como
+        no se muestra en ningun panel hasta que este la canjee, no hay carrera
+        posible y el canje funciona siempre.
+        """
+        self._podar_historial()
+        if self.login_key:
+            self._marcar_clave_usada(self.login_key)
+        else:
+            self.refresh_login_key(internal=True)
         return self.login_key
 
     def qr_seconds_left(self) -> int:
@@ -327,20 +394,42 @@ class Gateway:
         """
         Canjea la clave del QR por un token.
 
-        La clave caduca con el PIN (5 minutos) y solo sirve una vez, para que
-        el enlace que queda en el historial del navegador no valga siempre.
+        Acepta la clave vigente y tambien las anteriores mientras esten dentro
+        del margen de gracia: asi, si el codigo se renovo mientras el celular
+        lo escaneaba, el acceso no falla. Cada clave sirve una sola vez.
         """
+        if not key:
+            return None
+
         attempts = [t for t in self._key_failures.get(addr, []) if time.time() - t < 300]
         self._key_failures[addr] = attempts
         if len(attempts) >= 10:
             return None
-        if not key or not hmac.compare_digest(str(key), self.login_key):
+
+        candidata = str(key)
+        usada = False
+
+        if self.login_key and hmac.compare_digest(candidata, self.login_key):
+            self._key_failures.pop(addr, None)
+            self._marcar_clave_usada(candidata)
+            return self.issue_token()
+
+        # Margen de gracia: claves recien rotadas, aun sin usar.
+        self._podar_historial()
+        for anterior, _nacida, ya_usada in self._key_history:
+            if hmac.compare_digest(candidata, anterior):
+                usada = ya_usada
+                break
+        else:
+            attempts.append(time.time())
+            return None
+
+        if usada:
             attempts.append(time.time())
             return None
 
         self._key_failures.pop(addr, None)
-        # Un solo uso: se renueva la clave al instante.
-        self.refresh_login_key()
+        self._marcar_clave_usada(candidata)
         return self.issue_token()
 
     def pin_seconds_left(self) -> int:
@@ -465,8 +554,11 @@ class Gateway:
             self.keep_pin_fresh()
 
             # Si la clave del QR cambio, se vuelve a dibujar en la consola:
-            # asi el codigo que hay en pantalla nunca esta caducado.
-            if self.show_qr_console and self.login_key != last_shown_key:
+            # asi el codigo que hay en pantalla nunca esta caducado. Se omite
+            # si hay algun navegador conectado (el panel ya lo muestra y
+            # redibujar no haria mas que llenar la consola de codigos).
+            if (self.show_qr_console and not self.clients
+                    and self.login_key != last_shown_key):
                 last_shown_key = self.login_key
                 print_qr_block(self.console_host, self.port, last_shown_key,
                                when="codigo nuevo")
@@ -936,6 +1028,39 @@ def build_app(gateway: Gateway) -> web.Application:
         log.info("Autorizado con el QR: %s", addr)
         return web.json_response({"ok": True, "token": token})
 
+    async def qr_refresh(request: web.Request) -> web.StreamResponse:
+        """
+        Da un QR nuevo a un cliente que ya esta autorizado.
+
+        Lo usa la aplicacion del celular para recuperarse sola: si el codigo se
+        renovo justo mientras lo escaneaba, pide uno nuevo y reintenta, sin que
+        el usuario tenga que volver a apuntar con la camara.
+
+        Exige el token de un dispositivo ya autorizado: no sirve para entrar
+        desde cero, solo para renovar un acceso que ya existe. El enlace se
+        consume al usarlo.
+        """
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        token = str((payload or {}).get("token", ""))
+        if not gateway.token_is_valid(token):
+            log.warning("Recuperacion de QR rechazada desde %s: token no valido",
+                        request.remote)
+            return web.json_response({"ok": False, "error": "no autorizado"},
+                                     status=403)
+
+        clave = gateway.reservar_clave_actual()
+        url = f"http://{gateway.lan_host}:{gateway.port}/?k={clave}"
+        return web.json_response({
+            "ok": True,
+            "key": clave,
+            "url": url,
+            "seconds": gateway.qr_seconds_left(),
+            "matrix": qr.encode(url, "M"),
+        })
+
     async def qr_stream(request: web.Request) -> web.StreamResponse:
         """Avisa al panel de la PC cuando cambia la clave (server-sent events)."""
         if not is_local(request):
@@ -1007,6 +1132,7 @@ def build_app(gateway: Gateway) -> web.Application:
     app.router.add_get("/qr/stream", qr_stream)
     app.router.add_post("/qr/new", qr_new)
     app.router.add_post("/api/qr-login", qr_login)
+    app.router.add_post("/api/qr-refresh", qr_refresh)
     app.router.add_post("/api/stop", api_stop)
     app.router.add_get("/{name}", static_file)
     app.router.add_get("/healthz", health)

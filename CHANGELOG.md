@@ -1,5 +1,40 @@
 # Historial de cambios
 
+## 1.3.1
+
+Arregla que el código QR dejara de valer justo al escanearlo.
+
+Síntoma reportado: al escanear el QR, el código cambiaba en ese instante y el
+acceso fallaba («no se pudo conectar»), sin ninguna pista en la consola.
+
+Causa: el código visible se renueva cada 3 minutos, y si el canje llegaba
+después de la renovación, la clave ya no existía. Estaba reproducido: escanear
+y renovar en el mismo instante daba 403.
+
+### Corregido
+
+- **Margen de gracia** (`QR_GRACE_SECONDS = 20`): al renovar, el código anterior
+  sigue siendo válido 20 segundos más, que es lo que puede tardar el canje por
+  la red. Cada código se sigue usando una sola vez.
+- **Renovación anticipada**: el panel pide el siguiente código 20 segundos antes
+  de que caduque el actual (`QR_PRE_REFRESH_SECONDS`), para que el cambio no
+  coincida con el último segundo de vida del código.
+- **Recuperación automática**: si el canje llega igualmente con un código
+  caducado, el celular pide uno nuevo con `POST /api/qr-refresh` y lo canjea
+  solo, sin que el usuario tenga que volver a apuntar con la cámara. Ese
+  endpoint exige el token de un dispositivo ya autorizado.
+- La consola **ya no redibuja el QR** cuando hay un panel abierto: mostrarlo en
+  los dos sitios a la vez llenaba la ventana de códigos y confundía sobre cuál
+  estaba vigente.
+- Un fallo propio detectado al probarlo: la recuperación entregaba una clave ya
+  consumida, así que el reintento volvía a fallar. Ahora entrega una clave
+  nueva, que solo conoce ese cliente.
+
+### Añadido
+
+- `tools/test_qr_rotacion.py`: comprueba el margen de gracia, el uso único, la
+  recuperación con token y que la recuperación exige estar autorizado.
+
 ## 1.3.0
 
 El código QR dura 3 minutos y se puede detener el servicio.

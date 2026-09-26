@@ -110,6 +110,7 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `/qr/stream` | GET | **solo la PC** | Server-sent events: avisa cuando cambia la clave |
 | `/qr/new` | POST | **solo la PC** | Genera un QR nuevo |
 | `/api/qr-login` | POST | red local | Canjea la clave del QR por un token |
+| `/api/qr-refresh` | POST | red local (exige token) | Da un QR nuevo a un dispositivo ya autorizado, para recuperarse si el código caducó al escanearlo |
 | `/api/stop` | POST | **solo la PC** | Detiene el servidor |
 | `/healthz` | GET | red local | `{ "ok": true, "version": "..." }` |
 | `/{archivo}` | GET | red local | Recursos estáticos (lista blanca de extensiones) |

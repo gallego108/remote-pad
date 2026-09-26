@@ -178,7 +178,7 @@ let expiresAt = 0;          // instante (ms) en que caduca el codigo mostrado
 let refreshing = false;
 let stream = null;
 
-const REFRESH_MARGIN_MS = 5000;   // se pide uno nuevo 5 s antes de caducar
+const REFRESH_MARGIN_MS = 20000;   // se pide uno nuevo 20 s antes de caducar
 
 /** Dibuja la matriz del QR: cada modulo es un pixel del canvas. */
 function draw(matrix) {

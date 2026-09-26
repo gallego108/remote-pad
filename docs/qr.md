@@ -67,6 +67,29 @@ Esa respuesta se envía con `Cache-Control: no-store`, y el *service worker*
 ignora cualquier petición con `?k=`, así que nunca se sirve una copia guardada
 del enlace de acceso.
 
+## La rotación no puede hacer fallar un escaneo
+
+Un problema real: el código visible cambia cada 3 minutos, y si alguien está
+apuntando con la cámara en ese preciso instante, **el código que acaba de leer
+deja de valer y el acceso falla**. Pasó de verdad, con el mensaje «no se pudo
+conectar» y sin ninguna pista en la consola de la PC.
+
+Se resuelve con tres medidas que se complementan:
+
+1. **Margen de gracia** (`QR_GRACE_SECONDS = 20`): al renovar, el código
+   anterior **sigue siendo válido 20 segundos más**. Es justo el tiempo que
+   tarda el canje en llegar por la red. Cada código se sigue usando una sola
+   vez.
+2. **Renovación anticipada**: el panel pide el código siguiente
+   `QR_PRE_REFRESH_SECONDS` (20 s) antes de que caduque el actual, de modo que
+   el cambio no coincide con el último segundo de vida del código.
+3. **Recuperación automática**: si aun así el canje llega con un código
+   caducado, el celular pide uno nuevo con `POST /api/qr-refresh` y lo canjea
+   solo. Ese endpoint **exige el token de un dispositivo ya autorizado**: no
+   sirve para entrar desde cero, solo para renovar un acceso que ya existe. Si
+   el usuario no tenía acceso previo, se le muestra el aviso y el campo del
+   PIN.
+
 ## El cliente y las versiones antiguas
 
 Un problema real: el celular puede quedarse con una **copia antigua de
