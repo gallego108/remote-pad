@@ -101,6 +101,36 @@ puerto (`abrir-firewall.bat 8899`); el rango que abre el script cubre de 8765 a
 - Si tienes varios servidores abiertos, asegúrate de estar mirando la consola
   del que escucha en el puerto que abriste.
 
+### Al escanear el QR, la página carga pero pide el PIN
+
+Este síntoma —**la página abre bien, pero pide el código**— significa que el
+celular llega a la PC (red y Firewall correctos) pero **no está ejecutando el
+canje del QR**. Casi siempre es una **copia antigua de la aplicación guardada en
+el propio teléfono** (la caché del navegador o del *service worker*), de una
+versión anterior a que existiera el acceso por QR.
+
+Desde la versión 1.2.0 esto ya no debería ocurrir:
+
+- el servidor **inyecta la clave del QR dentro del HTML**, así que no depende de
+  que el navegador conserve el `?k=` de la dirección (algunos visores de cámara
+  lo recortan al redirigir);
+- esa página se sirve con `Cache-Control: no-store`;
+- el *service worker* pide la versión del servidor y, si detecta una nueva,
+  **recarga la pestaña sola**.
+
+Si te encuentras con esta situación en un celular que ya tenía la app instalada:
+
+1. En Chrome, abre el menú ⋮ → *Configuración del sitio* (o el candado de la
+   barra de direcciones) → **Borrar datos**.
+2. Recarga la página.
+3. Para confirmar que ya tienes la versión nueva: *Ajustes* dentro de la app
+   muestra **«versión 1.2.0»** al final. Si no aparece, sigues con la copia
+   antigua.
+
+Y un aviso: si tocas el campo del PIN y empiezas a escribir, la app entiende que
+prefieres el PIN y **no** usa el QR. Deja el campo vacío y toca *Conectar* para
+que use el código de la página.
+
 ### "Ese código ya se usó o pasó su tiempo"
 
 Cada QR **vale 30 segundos** y sirve **una sola vez**. Escanea el que muestra la

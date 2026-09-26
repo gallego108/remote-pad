@@ -134,12 +134,52 @@ async def check_http(port: int) -> None:
               "127.0.0.1" not in (data.get("url") or "127.0.0.1"),
               f"url={data.get('url')!r}")
 
-        # La clave nueva tambien debe poder canjearse.
+        # La clave renovada tambien debe poder canjearse.
         async with session.post(f"{base}/api/qr-login",
                                 json={"key": data.get("key")}) as response:
             second = await response.json()
             check("La clave renovada tambien sirve",
                   response.status == 200 and second.get("ok") is True)
+
+        # --- La pagina debe inyectar la clave en el propio HTML --------------
+        # Es lo que hace que el acceso no dependa de que el navegador conserve
+        # el parametro ?k= en la direccion (algunos visores de camara lo
+        # recortan al redirigir). Se pide una clave fresca para esta prueba,
+        # porque la anterior ya se ha canjeado y estaria caducada con razon.
+        async with session.post(f"{base}/qr/new") as response:
+            fresh = await response.json()
+        fresh_key = fresh.get("key")
+
+        async with session.get(f"{base}/?k={fresh_key}") as response:
+            html = await response.text()
+            check("La clave viaja dentro del HTML, no solo en la direccion",
+                  'name="remotepad-qr-key"' in html and fresh_key in html)
+            check("El HTML indica que la clave es valida",
+                  'name="remotepad-qr-estado" content="ok"' in html,
+                  f"clave {fresh_key}")
+            check("El HTML lleva la version de la app",
+                  'name="remotepad-version"' in html)
+            check("La pagina del QR no se cachea",
+                  "no-store" in response.headers.get("Cache-Control", ""),
+                  response.headers.get("Cache-Control", "sin cabecera"))
+
+        async with session.get(f"{base}/?k=clave-caducada") as response:
+            html = await response.text()
+            check("Con una clave caducada el HTML lo avisa",
+                  'name="remotepad-qr-estado" content="caducado"' in html)
+
+        async with session.get(f"{base}/") as response:
+            html = await response.text()
+            check("Sin clave en la direccion no se inyecta nada",
+                  "remotepad-qr-key" not in html)
+
+        # Y la clave fresca debe poder canjearse, como haria el telefono.
+        async with session.post(f"{base}/api/qr-login",
+                                json={"key": fresh_key}) as response:
+            data = await response.json()
+            check("El recorrido completo del QR (HTML -> canje) funciona",
+                  response.status == 200 and data.get("ok") is True,
+                  f"{response.status} {data}")
 
 
 def main() -> int:

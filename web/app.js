@@ -85,6 +85,8 @@ const state = {
   latency: 0,
   outbox: [],
   wakeLock: null,
+  qrDescartado: false,      // el usuario ha decidido escribir el PIN
+  tokenDescartado: false,   // ya se reintento sin el token guardado
 };
 
 /* ------------------------------------------------------------ utilidades */
@@ -188,7 +190,6 @@ function connect() {
     }
     startPing();
   };
-
   socket.onmessage = (event) => {
     let message;
     try { message = JSON.parse(event.data); } catch (_) { return; }
@@ -254,15 +255,38 @@ function handleMessage(message) {
 
     case 'auth_fail':
       state.authorized = false;
+      const teniaToken = Boolean(localStorage.getItem(TOKEN_KEY));
       try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
       el.auth.hidden = false;
       el.app.hidden = true;
-      el.authError.textContent = message.reason || 'PIN incorrecto';
-      el.authError.hidden = false;
       el.authBtn.disabled = false;
       el.pinInput.value = '';
+      setStatus('Sin autorizar', 'pending');
+
+      if (teniaToken && !state.tokenDescartado && qrKeyVigente()) {
+        // El token guardado ya no vale, pero la pagina trae un QR vigente:
+        // se usa ese en lugar de molestar al usuario.
+        state.tokenDescartado = true;
+        usarQrDeLaPagina();
+        break;
+      }
+      if (teniaToken && !state.tokenDescartado) {
+        // El token guardado ya no vale (el servidor se reinicio o se olvido el
+        // dispositivo). Se reintenta sin el para que el servidor pida el PIN
+        // en vez de dejarnos en un bucle de "PIN incorrecto".
+        state.tokenDescartado = true;
+        el.authError.textContent = 'Había un acceso guardado que ya no vale. '
+          + 'Se pide de nuevo: escanea el QR o escribe el PIN.';
+        el.authError.hidden = false;
+        el.pinInput.focus();
+        try { state.ws.close(); } catch (_) {}
+        connect();
+        break;
+      }
+
+      el.authError.textContent = message.reason || 'PIN incorrecto';
+      el.authError.hidden = false;
       el.pinInput.focus();
-      setStatus('PIN incorrecto', 'offline');
       buzz([40, 60, 40]);
       break;
 
@@ -627,7 +651,8 @@ function refreshSettingsUI() {
   $('s-haptics').checked = settings.haptics;
   $('s-edges').checked = settings.edgeZones;
   $('about').textContent =
-    `Pantalla: ${state.screen.w}×${state.screen.h} px · latencia ${state.latency} ms`;
+    `Pantalla: ${state.screen.w}×${state.screen.h} px · latencia ${state.latency} ms`
+    + (appVersion() ? ` · versión ${appVersion()}` : ' · versión desconocida');
 }
 
 /* ------------------------------------------------------ teclado remoto */
@@ -683,8 +708,20 @@ function bindUI() {
   });
 
   el.pinInput.addEventListener('input', () => {
-    el.pinInput.value = el.pinInput.value.replace(/\D/g, '').slice(0, 6);
-    if (el.pinInput.value.length === 6) el.authBtn.click();
+    const escrito = el.pinInput.value;
+    // Si el campo estaba vacio y el usuario empieza a escribir, en realidad
+    // quiere el PIN: se descarta la clave del QR y no se le toca el texto.
+    if (escrito.length > 0 && qrKeyVigente()) {
+      state.qrDescartado = true;
+    }
+    if (escrito.length === 0 && qrKeyVigente()) {
+      // Tocar el campo vacio con un QR vigente en la pagina: se usa ese.
+      usarQrDeLaPagina();
+      return;
+    }
+    const limpio = escrito.replace(/\D/g, '').slice(0, 6);
+    el.pinInput.value = limpio;
+    if (limpio.length === 6) el.authBtn.click();
   });
 
   el.pinBtn.addEventListener('click', () => { send('get_state', {}); });
@@ -857,19 +894,55 @@ async function requestWakeLock() {
 
 /* ---------------------------------------------------------- acceso por QR */
 /**
- * Si se llega desde el codigo QR, la direccion trae una clave de un solo uso.
- * Se canjea por un token y se limpia la barra de direcciones, para que el
- * enlace no quede en el historial ni se pueda reutilizar.
+ * La clave del QR puede llegar de dos formas:
+ *   1) en la direccion, como ?k=...  (cuando el navegador la conserva)
+ *   2) inyectada por el servidor en una etiqueta meta (mas fiable: algunos
+ *      visores de camara recortan la direccion al redirigir)
  *
- * Los mensajes de error distinguen los tres fallos posibles, porque cada uno
- * se arregla de una forma distinta: no llegar al servidor, que el codigo ya
- * no valga, o que el servidor conteste algo raro.
+ * Se acepta cualquiera de las dos. Ademas el servidor avisa, en otra etiqueta,
+ * de si la clave seguia vigente cuando se sirvio la pagina.
  */
-async function qrLogin() {
+function qrKey() {
+  const meta = document.querySelector('meta[name="remotepad-qr-key"]');
+  if (meta && meta.content) return meta.content;
   const params = new URLSearchParams(location.search);
-  const key = params.get('k');
+  return params.get('k') || '';
+}
+
+function appVersion() {
+  const meta = document.querySelector('meta[name="remotepad-version"]');
+  return meta ? meta.content : '';
+}
+
+/** True si el servidor dejo en la pagina una clave de QR aun vigente. */
+function qrKeyVigente() {
+  if (state.qrDescartado) return false;   // el usuario prefiere el PIN
+  const estado = document.querySelector('meta[name="remotepad-qr-estado"]');
+  return Boolean(estado && estado.content === 'ok' && qrKey());
+}
+
+/**
+ * Usa la clave que el servidor puso en la pagina.
+ *
+ * Es el camino de respaldo: si el navegador perdio el parametro ?k= de la
+ * direccion (algunos visores de camara lo recortan), la clave sigue estando
+ * en el HTML y basta con pulsar el campo del PIN para entrar.
+ */
+async function usarQrDeLaPagina() {
+  el.authError.textContent = 'Usando el código de la página…';
+  el.authError.hidden = false;
+  const ok = await qrLogin();
+  if (!ok) return;
+  // El token ya esta guardado: se reconecta para que el servidor lo acepte.
+  try { state.ws.close(); } catch (_) {}
+  connect();
+}
+
+async function qrLogin() {
+  const key = qrKey();
   if (!key) return false;
 
+  // Se limpia la direccion para que el enlace no quede en el historial.
   try {
     history.replaceState(null, '', location.pathname);
   } catch (_) { /* algunos navegadores no lo permiten */ }
@@ -883,16 +956,16 @@ async function qrLogin() {
     });
   } catch (_) {
     // Ni siquiera se ha podido hablar con el servidor.
-    showAuthError('No se pudo conectar con la PC. Comprueba que el servidor '
-      + 'siga encendido y que el celular esté en la misma WiFi.');
+    showAuthError('No se pudo conectar con la PC para validar el código. '
+      + (appVersion() ? '(version ' + appVersion() + ') ' : '')
+      + 'Comprueba que el servidor siga encendido.');
     return false;
   }
 
   if (response.status === 403) {
     // El servidor ha respondido: la red funciona. El codigo ya no vale.
     showAuthError('El código caducó o ya se usó (duran 30 segundos). '
-      + 'Mira la PC: en la consola y en el panel aparece uno nuevo cada 30 '
-      + 'segundos. Escanea ese.');
+      + 'Mira la PC: aparece uno nuevo cada 30 segundos. Escanea ese.');
     return false;
   }
 
@@ -933,7 +1006,24 @@ async function init() {
   connect();
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    // Si hay una version nueva del service worker, se recarga la pagina: es lo
+    // que evita que el celular siga con un app.js antiguo guardado.
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data && event.data.tipo === 'version-nueva') {
+        window.location.reload();
+      }
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then((registration) => registration.update().catch(() => {}))
+      .catch(() => {});
+    // Al volver a primer plano se busca una version nueva.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        navigator.serviceWorker.getRegistration()
+          .then((registration) => registration && registration.update())
+          .catch(() => {});
+      }
+    });
   }
 }
 

@@ -1,5 +1,63 @@
 # Historial de cambios
 
+## 1.2.0
+
+Arregla el caso real de "el QR no entra": el celular ejecutaba una copia vieja.
+
+Síntoma: al escanear, la página cargaba bien, **pedía el PIN** y al escribir el
+código salía un error. Significa que el celular llega a la PC (red y Firewall
+correctos) pero no ejecuta el canje del QR.
+
+### Corregido
+
+- **La clave del QR viaja ahora dentro del HTML**, en etiquetas meta, además de
+  en la dirección. Algunos visores de cámara recortan el `?k=` al redirigir, y
+  entonces la página cargaba y pedía el PIN sin intentar el canje: exactamente
+  el síntoma reportado.
+- La página del QR se sirve con `Cache-Control: no-store` y el *service worker*
+  ignora las peticiones con `?k=`, así que nunca se reutiliza una copia guardada
+  del enlace de acceso.
+- **Un token guardado que ya no vale ya no bloquea la app.** Antes el servidor
+  lo rechazaba y la pantalla se quedaba sin salida. Ahora se descarta y se
+  vuelve a pedir el acceso, usando el QR de la página si lo hay.
+- Si hay un QR vigente en la página y el usuario **no escribe nada**, al tocar
+  el campo del PIN se usa ese código. Si empieza a escribir, se respeta el PIN.
+- El service worker anterior podía dejar el `app.js` viejo en el teléfono
+  (cargaba la página pero pedía el PIN). Ahora, al activarse una versión nueva,
+  **avisa a las pestañas y la aplicación se recarga sola**; además busca
+  actualización al volver a primer plano.
+
+### Añadido
+
+- La versión del servidor se muestra en *Ajustes* («versión 1.2.0»), para
+  comprobar de un vistazo si el celular usa la copia nueva.
+- `tools/diagnostico_qr.py`: recorre el QR como el navegador del celular (con su
+  User-Agent), desde la página hasta la autenticación del WebSocket.
+- `test_qr_login.py` comprueba la inyección de la clave, el estado y la versión
+  en el HTML, y que esa respuesta no se cachea.
+
+## 1.1.2
+
+El QR de la consola ya no caduca sin remedio, y errores claros.
+
+### Añadido
+
+- La consola **redibuja el QR** cada vez que la clave se renueva (cada 30 s),
+  para que el código a la vista no esté caducado.
+- **Pulsar ENTER** en la consola imprime un QR nuevo al instante: respaldo
+  cuando la consola no admite colores.
+- `tools/diagnostico_qr.py` y el aviso de arranque con las instrucciones del
+  Firewall.
+
+### Cambiado
+
+- Los mensajes del celular distinguen tres fallos: no llegar al servidor, que el
+  código haya caducado (403) u otro error. Antes todos decían lo mismo.
+- El servidor registra con claridad qué ha pasado: «Autorizado por token»,
+  «Autorizado con el PIN», «Autorizado con el QR», «PIN incorrecto desde X (el
+  PIN vigente es Y)», «Petición de acceso sin PIN ni token» y «QR rechazado: el
+  código ya no vale».
+
 ## 1.1.1
 
 Ventana del QR más corta y solución al bloqueo del Firewall.

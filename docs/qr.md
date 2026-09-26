@@ -44,6 +44,50 @@ para uso continuado conviene el panel `/qr`.
 La rotación la hace `Gateway.rotate_qr_key_if_needed()`, que se ejecuta en cada
 ciclo del bucle de animación y también desde el flujo de eventos del panel.
 
+## Cómo llega la clave al celular
+
+La clave viaja por **dos caminos a la vez**, para que el acceso no dependa del
+navegador:
+
+1. **En la dirección**: `http://192.168.1.9:8765/?k=<clave>`.
+2. **Dentro del HTML**: cuando el servidor sirve la página y la petición trae
+   `?k=`, escribe la clave en etiquetas meta:
+
+   ```html
+   <meta name="remotepad-qr-key" content="...">
+   <meta name="remotepad-qr-estado" content="ok|caducado">
+   <meta name="remotepad-version" content="1.2.0">
+   ```
+
+El segundo camino existe porque algunos **visores de cámara recortan la
+dirección al redirigir**, y entonces el parámetro se pierde: la página cargaba y
+pedía el PIN sin intentar el QR. Con la etiqueta meta la clave sobrevive a
+cualquier redirección, y `remotepad-qr-estado` permite avisar en la propia
+pantalla de que el código ya había caducado cuando se sirvió.
+
+Esa respuesta se envía con `Cache-Control: no-store`, y el *service worker*
+ignora cualquier petición con `?k=`, así que nunca se sirve una copia guardada
+del enlace de acceso.
+
+## El cliente y las versiones antiguas
+
+Un problema real: el celular puede quedarse con una **copia antigua de
+`app.js`** (de antes de que existiera el QR). Entonces la página carga, pide el
+PIN y nunca intenta el canje, sin ningún error visible en la PC.
+
+Medidas que lo evitan:
+
+- El *service worker* usa estrategia **red primero**: si hay conexión manda
+  siempre el servidor; la caché solo es respaldo sin conexión.
+- Al activarse una versión nueva, el *service worker* avisa a las pestañas
+  abiertas (`version-nueva`) y la aplicación **se recarga sola**.
+- El registro se hace con `updateViaCache: 'none'` y se busca actualización al
+  volver la app a primer plano.
+- El nombre de la caché incluye versión (`remotepad-v3`) y el `activate` borra
+  las anteriores.
+- La versión del servidor se muestra en *Ajustes* dentro de la app, para poder
+  comprobar de un vistazo qué copia se está ejecutando.
+
 ## El codificador
 
 `server/qr.py` implementa el estándar ISO/IEC 18004 sin dependencias externas.

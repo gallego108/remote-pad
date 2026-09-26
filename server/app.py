@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hmac
+import html as html_lib
 import ipaddress
 import json
 import logging
@@ -58,6 +59,10 @@ DEFAULT_PORT = 8765
 
 PIN_ROTATE_SECONDS = 300.0   # cada cuanto cambia el PIN de seguridad
 QR_VALID_SECONDS = 30.0      # cuanto vale cada codigo QR (de un solo uso)
+
+# Sube al cambiar la parte web: sirve para comprobar en el celular que se esta
+# ejecutando la version nueva y no una copia guardada.
+APP_VERSION = "1.2.0"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -802,7 +807,34 @@ def build_app(gateway: Gateway) -> web.Application:
     app = web.Application()
 
     async def index(request: web.Request) -> web.StreamResponse:
-        return web.FileResponse(WEB_ROOT / "index.html")
+        """
+        Sirve la aplicacion del celular.
+
+        Si la peticion trae la clave del QR (?k=...), se inyecta en el propio
+        HTML como etiqueta meta. Asi el acceso no depende de que el navegador
+        conserve el parametro en la direccion: algunos visores de camara lo
+        recortan al redirigir. Ademas esa respuesta no se cachea.
+        """
+        html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
+        key = request.query.get("k", "")
+        headers = {"Cache-Control": "no-store"} if key else {}
+
+        if key:
+            # Comprobacion previa: si la clave ya no vale se avisa en la propia
+            # pantalla, sin necesidad de que el cliente haga la peticion.
+            if hmac.compare_digest(str(key), gateway.login_key):
+                estado = "ok"
+            else:
+                estado = "caducado"
+            meta = (
+                f'<meta name="remotepad-qr-key" content="{html_lib.escape(key, quote=True)}">\n'
+                f'<meta name="remotepad-qr-estado" content="{estado}">\n'
+                f'<meta name="remotepad-version" content="{APP_VERSION}">'
+            )
+            html = html.replace("<!-- remoto -->", meta)
+
+        return web.Response(text=html, content_type="text/html",
+                            charset="utf-8", headers=headers)
 
     async def static_file(request: web.Request) -> web.StreamResponse:
         name = request.match_info["name"]
