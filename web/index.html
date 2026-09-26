@@ -26,13 +26,15 @@
       </svg>
     </div>
     <h1>RemotePad</h1>
-    <p class="hint">Apunta con la cámara al código QR que muestra la PC. Se abre solo y no pide nada.</p>
+    <p class="hint" id="auth-hint">Si llegaste escaneando el código QR, entra solo.
+      Si no, escribe el PIN que muestra la consola de la PC.</p>
     <input id="pin-input" class="pin" type="tel" inputmode="numeric" pattern="[0-9]*"
            maxlength="6" placeholder="• • • • • •" autocomplete="one-time-code" aria-label="PIN de acceso">
     <p id="auth-error" class="error" hidden></p>
     <button id="auth-btn" type="submit" class="primary">Conectar</button>
     <p id="pin-live" class="pin-live" hidden>PIN actual en la PC: <b id="pin-live-value"></b></p>
-    <p class="tiny">Si el código caducó, escanea el que aparece ahora en la PC. También puedes escribir el PIN.</p>
+    <p class="tiny">El código QR vale 30 segundos y se renueva solo: si caducó,
+      escanea el que muestra la PC en ese momento. El PIN dura 5 minutos.</p>
   </form>
 </div>
 

@@ -23,6 +23,8 @@ const el = {
   pinInput: $('pin-input'),
   authBtn: $('auth-btn'),
   authError: $('auth-error'),
+  pinLive: $('pin-live'),
+  pinLiveValue: $('pin-live-value'),
   app: $('app'),
   statusDot: $('status-dot'),
   statusText: $('status-text'),
@@ -858,6 +860,10 @@ async function requestWakeLock() {
  * Si se llega desde el codigo QR, la direccion trae una clave de un solo uso.
  * Se canjea por un token y se limpia la barra de direcciones, para que el
  * enlace no quede en el historial ni se pueda reutilizar.
+ *
+ * Los mensajes de error distinguen los tres fallos posibles, porque cada uno
+ * se arregla de una forma distinta: no llegar al servidor, que el codigo ya
+ * no valga, o que el servidor conteste algo raro.
  */
 async function qrLogin() {
   const params = new URLSearchParams(location.search);
@@ -868,27 +874,55 @@ async function qrLogin() {
     history.replaceState(null, '', location.pathname);
   } catch (_) { /* algunos navegadores no lo permiten */ }
 
+  let response;
   try {
-    const response = await fetch('api/qr-login', {
+    response = await fetch('api/qr-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key }),
     });
+  } catch (_) {
+    // Ni siquiera se ha podido hablar con el servidor.
+    showAuthError('No se pudo conectar con la PC. Comprueba que el servidor '
+      + 'siga encendido y que el celular esté en la misma WiFi.');
+    return false;
+  }
+
+  if (response.status === 403) {
+    // El servidor ha respondido: la red funciona. El codigo ya no vale.
+    showAuthError('El código caducó o ya se usó (duran 30 segundos). '
+      + 'Mira la PC: en la consola y en el panel aparece uno nuevo cada 30 '
+      + 'segundos. Escanea ese.');
+    return false;
+  }
+
+  if (!response.ok) {
+    showAuthError('La PC rechazó el código (error ' + response.status + '). '
+      + 'Escanea el código que muestra ahora mismo.');
+    return false;
+  }
+
+  try {
     const data = await response.json();
     if (data && data.ok && data.token) {
       try { localStorage.setItem(TOKEN_KEY, data.token); } catch (_) {}
       return true;
     }
-    el.authError.textContent =
-      'Ese código ya se usó o pasó su tiempo (vale 30 segundos). ' +
-      'Escanea el que muestra la PC ahora mismo.';
-    el.authError.hidden = false;
+    showAuthError('La PC no devolvió un acceso válido. Vuelve a escanear el '
+      + 'código.');
   } catch (_) {
-    el.authError.textContent =
-      'No se pudo usar el código QR. Comprueba que el servidor siga encendido.';
-    el.authError.hidden = false;
+    showAuthError('Respuesta inesperada de la PC. Vuelve a escanear el código.');
   }
   return false;
+}
+
+/** Muestra el error de acceso y deja a mano la entrada del PIN. */
+function showAuthError(message) {
+  el.pinLive.hidden = false;
+  el.pinLiveValue.textContent = '········';
+  el.authError.textContent = message;
+  el.authError.hidden = false;
+  el.pinInput.focus();
 }
 
 /* ------------------------------------------------------------- arranque */

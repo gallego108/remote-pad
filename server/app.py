@@ -135,6 +135,31 @@ BANNER = r"""
 """
 
 
+def print_qr_block(host: str, port: int, login_key: str, when: str = "") -> None:
+    """
+    Dibuja el QR en la consola con su pie de informacion.
+
+    Se usa tanto al arrancar como cada vez que la clave se renueva, para que
+    el codigo que hay en pantalla nunca este caducado.
+    """
+    url = f"http://{host}:{port}/?k={login_key}"
+    etiqueta = f"   ({when})" if when else ""
+    print("=" * 58)
+    print(f"   Escanea este QR y entra sin escribir nada:{etiqueta}")
+    print()
+    if qr.supports_color():
+        try:
+            print(qr.render_terminal(qr.encode(url, "M")))
+        except Exception as exc:
+            print(f"   (no se pudo dibujar el QR: {exc})")
+    else:
+        print("   (esta consola no admite color: usa el panel del navegador)")
+    print()
+    print(f"   Vale {int(QR_VALID_SECONDS)} segundos: si tardas, se muestra uno")
+    print("   nuevo aqui solo. Tambien puedes pulsar ENTER para otro ahora.")
+    print(f"   Panel siempre vigente:  http://127.0.0.1:{port}/qr")
+
+
 def print_banner(host: str, port: int, pin: str, auth: bool,
                  login_key: str = "", show_qr: bool = True) -> None:
     line = "=" * 58
@@ -151,24 +176,16 @@ def print_banner(host: str, port: int, pin: str, auth: bool,
     if host != "127.0.0.1":
         print(f"   Desde esta misma PC:  http://127.0.0.1:{port}")
     print("   (el celular debe estar en la MISMA red WiFi)")
+    print()
+    print("   SI EL CELULAR DICE 'no se puede conectar':")
+    print("   es el Firewall de Windows. Ejecuta abrir-firewall.bat")
+    print("   (una sola vez, pide permisos de administrador).")
 
     if show_qr and auth and login_key:
-        url = f"http://{host}:{port}/?k={login_key}"
-        print(line)
-        print("   O escanea este QR y entra sin escribir nada:")
         print()
-        if qr.supports_color():
-            try:
-                print(qr.render_terminal(qr.encode(url, "M")))
-            except Exception as exc:
-                print(f"   (no se pudo dibujar el QR: {exc})")
-        else:
-            print("   (esta consola no admite color: abrelo en el navegador)")
-        print()
-        print(f"   El QR vale {int(QR_VALID_SECONDS)} segundos y se renueva solo.")
-        print("   Para uno siempre vigente, abrelo en la PC:")
-        print(f"       http://127.0.0.1:{port}/qr")
+        print_qr_block(host, port, login_key)
     print(line)
+    print("   Ctrl+C para detener el servidor.\n")
     print("   Ctrl+C para detener el servidor.\n")
 
 
@@ -199,6 +216,9 @@ class Gateway:
         self.port = port
         # IP que debe usar el celular (se ajusta al arrancar el servidor).
         self.lan_host = host if host not in ("0.0.0.0", "::") else local_ip()
+        # Redibujo del QR en la consola (lo activa run() segun los argumentos).
+        self.show_qr_console = False
+        self.console_host = self.lan_host
 
         self.pin = new_pin()
         self._pin_generated = time.monotonic()
@@ -399,8 +419,16 @@ class Gateway:
         suaves en lugar de a saltos.
         """
         loop = asyncio.get_running_loop()
+        last_shown_key = self.login_key
         while True:
             self.keep_pin_fresh()
+
+            # Si la clave del QR cambio, se vuelve a dibujar en la consola:
+            # asi el codigo que hay en pantalla nunca esta caducado.
+            if self.show_qr_console and self.login_key != last_shown_key:
+                last_shown_key = self.login_key
+                print_qr_block(self.console_host, self.port, last_shown_key,
+                               when="codigo nuevo")
 
             dx = dy = 0.0
             try:
@@ -609,13 +637,21 @@ class Gateway:
         if self.token_is_valid(token):
             client.token = str(token)
             client.kind = "auth"
-            log.info("Dispositivo reconocido por token desde %s", client.addr)
+            log.info("Autorizado por token: %s", client.addr)
             return {"t": "ok", "status": "auth", "id": client.client_id, "screen": list(self.controller.screen_size)}
 
-        if self.check_pin(data.get("pin"), client.addr):
+        if data.get("token"):
+            # Hay un token guardado en el celular pero ya no vale: es una
+            # situacion normal tras reiniciar el servidor con otra version, o
+            # si se pulso "Olvidar este dispositivo" en otro momento.
+            log.warning("Token desconocido desde %s: se pedira el PIN o el QR",
+                        client.addr)
+
+        pin = data.get("pin")
+        if pin and self.check_pin(pin, client.addr):
             client.token = self.issue_token()
             client.kind = "auth"
-            log.info("Nuevo dispositivo autorizado: %s", client.addr)
+            log.info("Autorizado con el PIN: %s", client.addr)
             return {
                 "t": "ok",
                 "status": "auth",
@@ -624,7 +660,11 @@ class Gateway:
                 "screen": list(self.controller.screen_size),
             }
 
-        log.warning("Intento de acceso fallido desde %s", client.addr)
+        if pin:
+            log.warning("PIN incorrecto desde %s (el PIN vigente es %s; "
+                        "caduca cada 5 minutos)", client.addr, self.pin)
+        else:
+            log.warning("Peticion de acceso sin PIN ni token desde %s", client.addr)
         return {"t": "auth_fail", "reason": "PIN incorrecto"}
 
     # -------------------------------------------------------------- WebSocket
@@ -797,9 +837,19 @@ def build_app(gateway: Gateway) -> web.Application:
         addr = request.remote or "?"
         token = gateway.use_login_key(key, addr)
         if token is None:
-            log.warning("QR rechazado desde %s", addr)
-            return web.json_response({"ok": False, "error": "QR caducado"}, status=403)
-        log.info("Dispositivo autorizado por QR desde %s", addr)
+            # Nota: si el celular ha podido llegar hasta aqui, la red y el
+            # firewall funcionan. Lo unico que falla es que ese codigo ya no
+            # vale (pasaron los 30 segundos o ya se uso).
+            log.warning(
+                "QR rechazado desde %s: el codigo ya no vale. Los codigos duran "
+                "%d segundos y sirven una sola vez; en la consola se muestra uno "
+                "nuevo automaticamente.",
+                addr, int(QR_VALID_SECONDS),
+            )
+            return web.json_response(
+                {"ok": False, "error": "El codigo QR caduco"}, status=403
+            )
+        log.info("Autorizado con el QR: %s", addr)
         return web.json_response({"ok": True, "token": token})
 
     async def qr_stream(request: web.Request) -> web.StreamResponse:
@@ -894,6 +944,12 @@ async def run(args: argparse.Namespace) -> None:
     if shown_host in ("0.0.0.0", "::"):
         shown_host = local_ip()
     gateway.lan_host = shown_host
+    gateway.console_host = shown_host
+    # La consola redibuja el QR cada vez que cambia, para que el que esta a la
+    # vista nunca este caducado (vale 30 segundos).
+    gateway.show_qr_console = (
+        not args.no_qr and not args.no_auth and qr.supports_color()
+    )
     print_banner(
         shown_host, args.port, gateway.pin, not args.no_auth,
         login_key=gateway.login_key, show_qr=not args.no_qr,
@@ -904,14 +960,48 @@ async def run(args: argparse.Namespace) -> None:
 
     loop = asyncio.get_running_loop()
     animations = loop.create_task(gateway.animation_loop())
+    keyboard = loop.create_task(watch_enter_key(gateway))
     try:
         await asyncio.Event().wait()          # corre hasta Ctrl+C
     except asyncio.CancelledError:
         pass
     finally:
-        animations.cancel()
+        for task in (animations, keyboard):
+            task.cancel()
         await gateway.shutdown()
         await runner.cleanup()
+
+
+async def watch_enter_key(gateway: Gateway) -> None:
+    """
+    Pulsar ENTER en la consola imprime un QR nuevo al instante.
+
+    Es el respaldo del redibujado automatico: si la consola no admite colores o
+    el codigo ya ha caducado, el usuario tiene una forma directa de pedir otro.
+    """
+    if not gateway.show_qr_console:
+        return
+
+    loop = asyncio.get_running_loop()
+
+    def read_line() -> str:
+        try:
+            return input()
+        except (EOFError, KeyboardInterrupt, OSError):
+            return "\x00"          # senal para terminar
+
+    try:
+        while True:
+            line = await loop.run_in_executor(None, read_line)
+            if line == "\x00":
+                return
+            gateway.refresh_login_key()
+            print_qr_block(gateway.console_host, gateway.port,
+                           gateway.login_key, when="codigo nuevo")
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        log.debug("lectura de ENTER terminada", exc_info=True)
 
 
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
