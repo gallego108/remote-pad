@@ -1,25 +1,83 @@
 # Solución de problemas
 
-## No puedo conectar
-
-### El celular no abre la dirección
-
-1. **Misma red**: comprueba que el celular no esté en datos móviles ni en otra
-   WiFi (ni en una red de invitados, que suele aislar los equipos).
-2. **Firewall**: la primera vez Windows pregunta si permites el tráfico. Si lo
-   cancelaste, abre *Permitir una aplicación a través del Firewall de Windows*
-   y habilita Python en **Redes privadas**.
-3. **La IP correcta**: la que muestra la consola es la de la PC ahora mismo. Si
-   cambió de red, reinicia el servidor.
-4. **Aislamiento de clientes**: algunas redes (hoteles, oficinas) impiden que
-   dos dispositivos se hablen entre sí. Prueba con el punto de acceso del
-   celular: conecta la PC a él y usa la IP que muestre la consola.
-
-Comprobación rápida desde la PC:
+Antes de nada, si el celular no conecta ejecuta:
 
 ```bash
-python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8765/healthz').read())"
+python tools/diagnostico_red.py 8765
 ```
+
+Comprueba en qué dirección escucha el servidor, si responde por la IP de la red
+local, cómo está clasificada la red WiFi y qué reglas del Firewall afectan al
+puerto.
+
+## El celular dice "no se puede conectar"
+
+**Es el Firewall de Windows, casi siempre.** Motivo comprobado: Windows tiene
+reglas de entrada para `python.exe` **solo de tipo UDP** (mDNS y similares), y
+el servidor usa **TCP**. Sin una regla TCP de entrada, el celular no puede
+llegar a la PC aunque la aplicación funcione perfectamente en local.
+
+### Solución
+
+Doble clic en **`abrir-firewall.bat`** y acepta el aviso de administrador.
+Crea la regla para el puerto 8765 (y un rango pequeño por si usas `--port`) y
+muestra la dirección que debe abrir el celular.
+
+Hacerlo a mano, desde una consola **como administrador**:
+
+```bat
+netsh advfirewall firewall add rule name="RemotePad TCP 8765" dir=in action=allow protocol=TCP localport=8765
+```
+
+Para quitarlo después:
+
+```bat
+netsh advfirewall firewall delete rule name="RemotePad TCP 8765"
+```
+
+### Alternativa sin tocar el Firewall
+
+Cambiar la red WiFi a **Privada**, que es lo que Windows espera para una red de
+casa:
+
+*Configuración → Red e Internet → WiFi → Propiedades → Perfil de red: Privada*
+
+O por consola (como administrador):
+
+```powershell
+Set-NetConnectionProfile -NetworkCategory Private
+```
+
+### Comprobar si ya está resuelto
+
+Con el servidor en marcha:
+
+```bash
+python tools/diagnostico_red.py 8765
+```
+
+Debe aparecer `[OK] red local: 192.168.1.9:8765 responde` y una regla de
+entrada que permite el puerto.
+
+### Si aun así no conecta
+
+1. **Misma red**: el celular no debe estar en datos móviles ni en otra WiFi.
+2. **Red de invitados**: muchas aíslan los equipos entre sí. Prueba con el punto
+   de acceso del celular: conecta la PC a él y usa la IP que muestre la consola.
+3. **Antivirus de terceros**: algunos (Kaspersky, ESET, Bitdefender) tienen su
+   propio cortafuegos y bloquean las conexiones entrantes. Autoriza Python ahí.
+4. **Red equivocada**: si la PC tiene varias interfaces (WiFi y Ethernet),
+   comprueba que la IP del QR es la de la interfaz que usa el celular. Puedes
+   forzarla con `--host`. 
+
+### Verificar que el servidor escucha bien
+
+```
+netstat -ano | findstr :8765
+```
+
+Debe aparecer `0.0.0.0:8765 ... LISTENING`. Si aparece `127.0.0.1:8765`, se
+arrancó con `--host 127.0.0.1` y el celular nunca podrá entrar.
 
 ### "No se pudo abrir el puerto 8765"
 
@@ -29,11 +87,9 @@ Otro programa lo ocupa. Usa otro puerto:
 iniciar.bat --port 8899
 ```
 
-Para ver quién lo ocupa:
-
-```bash
-netstat -ano | findstr :8765
-```
+Recuerda que **cambiar de puerto requiere volver a abrir el Firewall** para ese
+puerto (`abrir-firewall.bat 8899`); el rango que abre el script cubre de 8765 a
+8799, así que cualquier puerto de ese rango ya queda permitido.
 
 ## Problemas de acceso
 
@@ -45,10 +101,12 @@ netstat -ano | findstr :8765
 - Si tienes varios servidores abiertos, asegúrate de estar mirando la consola
   del que escucha en el puerto que abriste.
 
-### "El código QR ya se usó o caducó"
+### "Ese código ya se usó o pasó su tiempo"
 
-Cada QR sirve **una sola vez** y dura 5 minutos. Escanea el que muestra la PC
-en ese momento (el panel `/qr` se actualiza solo).
+Cada QR **vale 30 segundos** y sirve **una sola vez**. Escanea el que muestra la
+PC en ese momento: el panel `/qr` genera uno nuevo automáticamente, así que
+siempre hay uno vigente. Si el que escaneaste acaba de expirar, vuelve a apuntar
+al siguiente.
 
 ### El QR no se lee
 

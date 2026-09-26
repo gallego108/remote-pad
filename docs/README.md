@@ -26,9 +26,10 @@ Si es la primera vez, empieza por el [README](../README.md).
 | **Cliente** | Navegador del celular (PWA, sin instalar nada) |
 | **Requisito** | Python 3.9+ con `aiohttp` |
 | **Red** | WiFi local; no necesita internet |
-| **Acceso** | PIN de 6 dígitos rotativo o código QR de un solo uso |
+| **Acceso** | Código QR de un solo uso (vale 30 segundos) o PIN de 6 dígitos |
 | **Funciones** | Puntero, clics, doble clic, scroll, arrastre, teclado, atajos, multimedia, presentaciones |
-| **Pruebas** | `probar.bat`: 35 de control + arrastre + 19 de QR + 14 de acceso por QR |
+| **Si no conecta** | `abrir-firewall.bat` (el Firewall de Windows no abre TCP para Python) |
+| **Pruebas** | `probar.bat`: 35 de control + arrastre + 19 de QR + 17 de ventana + 16 de acceso |
 
 ## Recorrido recomendado
 

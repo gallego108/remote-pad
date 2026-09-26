@@ -1,5 +1,41 @@
 # Historial de cambios
 
+## 1.1.1
+
+Ventana del QR más corta y solución al bloqueo del Firewall.
+
+### Cambiado
+
+- El código QR ahora **vale 30 segundos** (antes 5 minutos) y sigue siendo de un
+  solo uso. El panel de la PC genera uno nuevo automáticamente al agotarse la
+  ventana, pidiéndolo **5 segundos antes** para no mostrar nunca uno caducado.
+- La renovación del panel ya no necesita recargar la página: `/qr/new` devuelve
+  la matriz y los datos del código nuevo.
+- El flujo de eventos del panel se reconecta solo si se cae (cada 3 segundos).
+- Los mensajes de la app al caducar el QR explican que hay que escanear el que
+  muestra la PC en ese momento, en lugar de remitir al PIN.
+
+### Añadido
+
+- **`abrir-firewall.bat`**: abre el puerto del servidor en el Firewall de
+  Windows pidiendo permisos de administrador. Resuelve el caso, muy habitual, de
+  que el celular no pueda conectarse porque Windows no tiene ninguna regla de
+  entrada **TCP** para Python (solo UDP).
+- **`tools/diagnostico_red.py`**: comprueba en qué dirección escucha el
+  servidor, si responde por la IP de la red local, cómo está clasificada la red
+  WiFi y qué reglas del Firewall afectan al puerto.
+- **`tools/test_qr_window.py`**: verifica la ventana de 30 segundos con un reloj
+  falseado (rotación automática, caducidad, uso único y que el PIN no cambia
+  cada 30 segundos).
+- **`tools/ver_firewall.py`**: muestra las reglas de entrada de Python para
+  diagnosticar el bloqueo.
+
+### Corregido
+
+- La prueba del panel comprobaba que `/qr/new` devolvía `ok`; ahora comprueba
+  que devuelve un QR utilizable, que apunta a la IP de la red y que su clave
+  sirve para entrar.
+
 ## 1.1.0
 
 Acceso con código QR.

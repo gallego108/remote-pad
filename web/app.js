@@ -880,11 +880,12 @@ async function qrLogin() {
       return true;
     }
     el.authError.textContent =
-      'El código QR ya se usó o caducó. Escanea el que muestra la PC ahora.';
+      'Ese código ya se usó o pasó su tiempo (vale 30 segundos). ' +
+      'Escanea el que muestra la PC ahora mismo.';
     el.authError.hidden = false;
   } catch (_) {
     el.authError.textContent =
-      'No se pudo usar el código QR. Escribe el PIN que muestra la PC.';
+      'No se pudo usar el código QR. Comprueba que el servidor siga encendido.';
     el.authError.hidden = false;
   }
   return false;

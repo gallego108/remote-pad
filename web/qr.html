@@ -152,7 +152,7 @@
 <div class="url" id="url"></div>
 
 <div class="meta">
-  <span>Este código caduca en <span class="timer" id="timer">--:--</span></span>
+  <span>Este código vale <span class="timer" id="timer">30 s</span> y se renueva solo</span>
   <button id="new">Generar uno nuevo</button>
 </div>
 
@@ -174,7 +174,11 @@ const timer = document.getElementById('timer');
 const dataElement = document.getElementById('data');
 
 let seconds = 0;
-let key = '';
+let expiresAt = 0;          // instante (ms) en que caduca el codigo mostrado
+let refreshing = false;
+let stream = null;
+
+const REFRESH_MARGIN_MS = 5000;   // se pide uno nuevo 5 s antes de caducar
 
 /** Dibuja la matriz del QR: cada modulo es un pixel del canvas. */
 function draw(matrix) {
@@ -196,21 +200,37 @@ function apply(data) {
   urlLabel.textContent = data.url;
   pinLabel.textContent = data.pin.slice(0, 3) + ' ' + data.pin.slice(3);
   seconds = data.seconds;
-  key = data.key;
+  expiresAt = Date.now() + seconds * 1000;
   document.title = 'RemotePad — ' + data.pin;
+  timer.classList.remove('expired');
+}
+
+/** Pide al servidor un codigo nuevo (tambien se renueva solo cada 30 s). */
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    const response = await fetch('qr/new', { method: 'POST' });
+    const data = await response.json();
+    if (data && data.matrix) apply(data);
+  } catch (error) {
+    // Sin conexion con el servidor: se reintentara en el siguiente ciclo.
+  } finally {
+    refreshing = false;
+  }
 }
 
 function tick() {
+  seconds = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
   if (seconds <= 0) {
-    timer.textContent = 'caducado';
-    timer.classList.add('expired');
+    timer.textContent = 'renovando…';
+    refresh();
     return;
   }
-  seconds -= 1;
-  const minutes = String(Math.floor(seconds / 60)).padStart(2, '0');
-  const rest = String(seconds % 60).padStart(2, '0');
-  timer.textContent = minutes + ':' + rest;
+  timer.textContent = seconds + ' s';
   timer.classList.remove('expired');
+  // Renovacion preventiva: nunca se llega a mostrar uno caducado.
+  if (Date.now() > expiresAt - REFRESH_MARGIN_MS) refresh();
 }
 
 // Datos iniciales que vienen incrustados desde el servidor.
@@ -220,20 +240,25 @@ try {
   console.error('No se pudieron leer los datos del QR', error);
 }
 
-setInterval(tick, 1000);
+setInterval(tick, 250);
 
-// El servidor avisa por SSE cada vez que la clave se renueva: asi el panel
-// siempre muestra un QR valido sin recargar la pagina.
-const stream = new EventSource('qr/stream');
-stream.onmessage = (event) => {
-  try {
-    apply(JSON.parse(event.data));
-  } catch (error) { /* mensaje incompleto: se ignora */ }
-};
+// El servidor avisa por SSE cada vez que la clave se renueva.
+function connectStream() {
+  stream = new EventSource('qr/stream');
+  stream.onmessage = (event) => {
+    try {
+      apply(JSON.parse(event.data));
+    } catch (error) { /* mensaje incompleto: se ignora */ }
+  };
+  stream.onerror = () => {
+    // Si se cae el aviso, se sigue renovando por el reloj.
+    if (stream) stream.close();
+    setTimeout(connectStream, 3000);
+  };
+}
+connectStream();
 
-document.getElementById('new').addEventListener('click', async () => {
-  await fetch('qr/new', { method: 'POST' });
-});
+document.getElementById('new').addEventListener('click', refresh);
 </script>
 </body>
 </html>

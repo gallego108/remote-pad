@@ -120,9 +120,26 @@ async def check_http(port: int) -> None:
         check("El panel genera una clave nueva tras el canje",
               new_key is not None and new_key.group(1) != key)
 
-        # Renovacion manual.
+        # Renovacion manual: devuelve los datos del codigo nuevo.
         async with session.post(f"{base}/qr/new") as response:
-            check("El boton de renovar funciona", response.status == 200)
+            data = await response.json()
+            check("El boton de renovar devuelve un QR utilizable",
+                  response.status == 200 and data.get("matrix")
+                  and data.get("url") and data.get("key") != key,
+                  f"{response.status} claves={data.get('key')!r}")
+
+        # El QR debe apuntar a la red local, no a 127.0.0.1: en el celular
+        # "127.0.0.1" es el propio telefono y no abriria nada.
+        check("El QR apunta a la IP de la red, no a loopback",
+              "127.0.0.1" not in (data.get("url") or "127.0.0.1"),
+              f"url={data.get('url')!r}")
+
+        # La clave nueva tambien debe poder canjearse.
+        async with session.post(f"{base}/api/qr-login",
+                                json={"key": data.get("key")}) as response:
+            second = await response.json()
+            check("La clave renovada tambien sirve",
+                  response.status == 200 and second.get("ok") is True)
 
 
 def main() -> int:

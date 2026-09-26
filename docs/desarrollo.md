@@ -49,6 +49,7 @@ remote-pad/
 ```bash
 python tools/check_ui.py                 # HTML/CSS/JS coherentes, sin servidor
 python tools/test_qr.py                  # generador de QR (no necesita servidor)
+python tools/test_qr_window.py           # ventana de 30 s del QR (reloj falseado)
 python tools/test_qr_capacity.py         # QR llenos al máximo (necesita zxing-cpp)
 python tools/verify_rs.py                # Reed-Solomon (no necesita servidor)
 
@@ -62,6 +63,22 @@ python tools/test_qr_login.py 8791
 O todo de una vez con `probar.bat`, que arranca su propio servidor, comprueba y
 lo detiene.
 
+### Diagnóstico de red
+
+Cuando el celular no conecta, este es el primero que hay que ejecutar (con el
+servidor en marcha):
+
+```bash
+python tools/diagnostico_red.py 8765
+python tools/ver_firewall.py       # reglas de entrada de Python, en detalle
+```
+
+`diagnostico_red.py` comprueba la dirección de escucha, el alcance por la IP de
+la red local, la clasificación de la red WiFi y las reglas del Firewall.
+`ver_firewall.py` desglosa las reglas de entrada que mencionan Python: sirve
+para confirmar el caso típico de que **solo hay reglas UDP**, que es lo que
+bloquea al celular.
+
 ### Qué cubre cada prueba
 
 | Prueba | Cubre |
@@ -71,7 +88,8 @@ lo detiene.
 | `test_drag.py` | Arrastre real: el puntero se mueve con el botón pulsado y se suelta al final |
 | `test_qr.py` | Aritmética de QR contra la tabla oficial, estructura, ida y vuelta y lectura con zxing |
 | `test_qr_capacity.py` | Que la capacidad calculada sea la real, llenando al byte exacto |
-| `test_qr_login.py` | Canje de la clave, token, un solo uso, rechazo de claves falsas |
+| `test_qr_window.py` | Ventana de 30 s del QR: rotación automática, caducidad y uso único, con reloj falseado |
+| `test_qr_login.py` | Canje de la clave, token, un solo uso, rechazo de claves falsas y que el QR apunte a la IP de red |
 
 ## Notas para tocar el código
 

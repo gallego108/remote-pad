@@ -32,8 +32,10 @@ de uno correcto por el tiempo que tarda en responder.
 
 ### Código QR de un solo uso
 
-Ver [qr.md](qr.md). Su clave caduca con el PIN, se invalida al primer canje y se
-compara también en tiempo constante.
+Ver [qr.md](qr.md). Su clave **vale 30 segundos**, se invalida al primer canje y
+se compara también en tiempo constante. Es una ventana corta a propósito: el
+panel de la PC muestra siempre uno vigente, pero una foto del código deja de
+servir enseguida.
 
 ### Token de dispositivo
 

@@ -57,12 +57,31 @@ python app.py
 2. Escanea el QR con la cámara, o abre la dirección y escribe el PIN.
 3. Listo.
 
+### Si el celular no conecta: el Firewall
+
+Windows **no tiene ninguna regla de entrada TCP para Python** (solo UDP), así
+que bloquea al celular aunque la aplicación funcione en la PC. Se arregla con un
+clic:
+
+**Doble clic en `abrir-firewall.bat`** y acepta el aviso de administrador. Crea
+la regla para el puerto 8765 y un rango cercano, y muestra la dirección que debe
+abrir el celular.
+
+Alternativa: cambiar la red WiFi a **Privada**
+(*Configuración → Red e Internet → WiFi → Propiedades*).
+
+Para averiguar qué está fallando:
+
+```bash
+python tools/diagnostico_red.py 8765
+```
+
 ### Aviso del Firewall de Windows
 
-La primera vez, Windows preguntará si permites el tráfico de red para Python.
-**Marca "Redes privadas" y acepta.** Si lo cancelas, el celular no podrá
-conectarse: para arreglarlo, busca "Permitir una aplicación a través del
-Firewall de Windows" y habilita Python (o el `python.exe` que uses).
+La primera vez, Windows puede preguntar si permites el tráfico de red para
+Python. **Marca "Redes privadas" y acepta.** Si lo cancelas o el aviso no
+aparece, usa `abrir-firewall.bat`: es lo mismo, pero explícito y para el puerto
+que necesitas.
 
 ## Instalarlo como app en el celular
 

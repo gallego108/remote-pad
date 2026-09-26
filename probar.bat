@@ -57,6 +57,8 @@ echo        servidor listo (PIN !PIN!)
 echo  [4/4] Pruebas de extremo a extremo...
 python tools\test_qr.py
 if errorlevel 1 set RESULT=1
+python tools\test_qr_window.py
+if errorlevel 1 set RESULT=1
 python tools\test_client.py --port %PORT% --pin !PIN! --cursor
 if errorlevel 1 set RESULT=1
 python tools\test_drag.py --port %PORT% --pin !PIN!

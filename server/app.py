@@ -57,6 +57,7 @@ WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
 DEFAULT_PORT = 8765
 
 PIN_ROTATE_SECONDS = 300.0   # cada cuanto cambia el PIN de seguridad
+QR_VALID_SECONDS = 30.0      # cuanto vale cada codigo QR (de un solo uso)
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -164,9 +165,8 @@ def print_banner(host: str, port: int, pin: str, auth: bool,
         else:
             print("   (esta consola no admite color: abrelo en el navegador)")
         print()
-        minutes = int(PIN_ROTATE_SECONDS // 60)
-        print(f"   El QR caduca en {minutes} minutos y se renueva solo.")
-        print("   Si no cabe en la consola, abrelo en la PC:")
+        print(f"   El QR vale {int(QR_VALID_SECONDS)} segundos y se renueva solo.")
+        print("   Para uno siempre vigente, abrelo en la PC:")
         print(f"       http://127.0.0.1:{port}/qr")
     print(line)
     print("   Ctrl+C para detener el servidor.\n")
@@ -226,23 +226,32 @@ class Gateway:
         if time.monotonic() - self._pin_generated < PIN_ROTATE_SECONDS:
             return
         self.pin = new_pin()
-        self.login_key = new_login_key()
         self._pin_generated = time.monotonic()
-        self.login_key_generated = self._pin_generated
-        log.info("Nuevos datos de acceso: PIN %s, QR %s", self.pin, self.login_key)
+        log.info("Nuevo PIN de seguridad: %s", self.pin)
         self.broadcast({"t": "pin", "pin": self.pin})
-        self.broadcast({"t": "qr_key", "key": self.login_key})
+
+    def rotate_qr_key_if_needed(self) -> None:
+        """
+        El codigo QR vale 30 segundos.
+
+        Pasado ese tiempo se genera otro automaticamente, de modo que el panel
+        de la PC siempre muestra un codigo vigente. Es de un solo uso: al
+        canjearlo tambien se renueva aqui.
+        """
+        if time.monotonic() - self.login_key_generated < QR_VALID_SECONDS:
+            return
+        self.refresh_login_key()
 
     def refresh_login_key(self) -> str:
-        """Genera un QR nuevo (lo usa el boton del panel de la PC)."""
+        """Genera un QR nuevo (lo usa el panel de la PC y la rotacion)."""
         self.login_key = new_login_key()
         self.login_key_generated = time.monotonic()
         self.broadcast({"t": "qr_key", "key": self.login_key})
         return self.login_key
 
     def qr_seconds_left(self) -> int:
-        remaining = PIN_ROTATE_SECONDS - (time.monotonic() - self.login_key_generated)
-        return max(0, int(remaining))
+        remaining = QR_VALID_SECONDS - (time.monotonic() - self.login_key_generated)
+        return max(0, int(round(remaining)))
 
     def login_url(self) -> str:
         """
@@ -316,6 +325,7 @@ class Gateway:
 
     def keep_pin_fresh(self) -> None:
         self.rotate_pin_if_needed()
+        self.rotate_qr_key_if_needed()
         self._discard_stale()
 
     def _discard_stale(self) -> None:
@@ -805,7 +815,7 @@ def build_app(gateway: Gateway) -> web.Application:
         try:
             while True:
                 await asyncio.sleep(1.0)
-                gateway.rotate_pin_if_needed()
+                gateway.keep_pin_fresh()
                 if gateway.login_key != last_key:
                     last_key = gateway.login_key
                     data = {
@@ -825,10 +835,23 @@ def build_app(gateway: Gateway) -> web.Application:
         return response
 
     async def qr_new(request: web.Request) -> web.StreamResponse:
+        """
+        Genera un QR nuevo y devuelve sus datos.
+
+        Lo usa el panel de la PC: tanto el boton como la renovacion automatica
+        cada 30 segundos. Devolver los datos evita tener que recargar.
+        """
         if not is_local(request):
             raise web.HTTPForbidden(text="Solo en la PC")
         gateway.refresh_login_key()
-        return web.json_response({"ok": True})
+        url = gateway.login_url()
+        return web.json_response({
+            "url": url,
+            "key": gateway.login_key,
+            "pin": gateway.pin,
+            "seconds": gateway.qr_seconds_left(),
+            "matrix": qr.encode(url, "M"),
+        })
 
     app.router.add_get("/", index)
     app.router.add_get("/ws", gateway.ws_handler)

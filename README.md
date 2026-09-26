@@ -32,17 +32,33 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
    ```
 
 4. **Apunta con la cámara del celular al código**: se abre el navegador solo y
-   entras directamente, sin escribir nada.
+   entras directamente, sin escribir nada. El código vale **30 segundos** y se
+   renueva solo; si tardas, escanea el que aparezca en ese momento.
 5. Si el QR no te resulta cómodo, abre `http://192.168.1.9:8765` y escribe el
    PIN de 6 dígitos.
 
+> ### Si el celular dice "no se puede conectar"
+>
+> Es el **Firewall de Windows**, no la aplicación: Windows no tiene ninguna
+> regla de entrada para **TCP** en Python (solo UDP), así que bloquea al
+> celular aunque la app funcione en la PC.
+>
+> **Solución:** haz doble clic en **`abrir-firewall.bat`** y acepta el aviso de
+> administrador. Crea la regla y muestra la dirección que debe abrir el celular.
+>
+> Si no quieres tocar el Firewall, cambia la red WiFi a **Privada**
+> (Configuración → Red e Internet → WiFi → Propiedades).
+>
+> Para saber qué está pasando, ejecuta:
+> `python tools/diagnostico_red.py 8765`
+
 > **Si el QR no cabe en la consola**, en la PC se abre automáticamente una
-> página con el código en grande (`http://127.0.0.1:8765/qr`), con un botón
-> para generar uno nuevo cuando quieras.
+> página con el código en grande (`http://127.0.0.1:8765/qr`), que se
+> **renueva sola cada 30 segundos** y tiene un botón para generar uno nuevo.
 
 > **La primera vez**, Windows preguntará si quieres permitir el tráfico de red
-> para Python. Marca **Redes privadas** y acepta; si lo cancelas, el celular no
-> podrá conectarse.
+> para Python. Marca **Redes privadas** y acepta; si lo cancelas, usa
+> `abrir-firewall.bat`.
 
 **Para no repetir el acceso:** en Chrome, menú ⋮ → *Añadir a pantalla de
 inicio*. Así queda como una app con su icono, y el dispositivo recuerda el
@@ -54,8 +70,10 @@ El QR contiene una dirección con una **clave de un solo uso**
 (`http://192.168.1.9:8765/?k=...`). Al escanearlo, el celular canjea esa clave
 por un token de dispositivo y entra sin pedir el PIN.
 
-- La clave **caduca a los 5 minutos** y **se invalida al primer uso**, así que
-  el enlace que quede en el historial del navegador ya no sirve.
+- La clave vale **30 segundos** y **se invalida al primer uso**, así que el
+  enlace que quede en el historial del navegador ya no sirve.
+- El panel de la PC **genera un código nuevo cada 30 segundos**: siempre hay uno
+  vigente en pantalla, sin que tengas que hacer nada.
 - Solo lo puede leer quien esté delante de la pantalla de tu PC (o quien tú se
   lo muestres), igual que el PIN.
 - La página que muestra el código en grande **solo responde a la propia PC**:
@@ -135,6 +153,7 @@ También puedes pasar estos parámetros a `iniciar.bat`, por ejemplo:
 ```
 remote-pad/
 ├── iniciar.bat              ← doble clic para usar la app
+├── abrir-firewall.bat       ← si el celular no conecta: abre el puerto
 ├── probar.bat               ← doble clic para comprobar que todo funciona
 ├── server/
 │   ├── app.py               Servidor HTTP + WebSocket, acceso por PIN/QR
@@ -150,10 +169,12 @@ remote-pad/
 │   ├── sw.js                Service worker (funcionamiento sin conexión)
 │   └── manifest.webmanifest
 └── tools/
+    ├── diagnostico_red.py   Averigua por qué el celular no conecta
     ├── test_client.py       Pruebas de extremo a extremo (protocolo completo)
     ├── test_drag.py         Prueba real de arrastrar y soltar
     ├── test_qr.py           Verificación del generador de QR
     ├── test_qr_login.py     Prueba del acceso por QR de extremo a extremo
+    ├── test_qr_window.py    Ventana de 30 segundos del QR
     ├── check_ui.py          Coherencia entre HTML, CSS y JS
     └── make_icons.py        Genera los iconos de la app
 ```
@@ -213,14 +234,16 @@ Detalles que marcan la diferencia:
 
 | Síntoma | Solución |
 |---|---|
-| El celular no abre la dirección | Misma WiFi en ambos. Revisa el Firewall de Windows: permite Python en redes privadas. |
-| El QR no se ve en la consola | Abre `http://127.0.0.1:8765/qr` en la PC: ahí sale en grande. |
-| "El código QR ya se usó o caducó" | Cada QR sirve una sola vez y dura 5 minutos. Escanea el que muestra la PC ahora (se renueva solo). |
+| **El celular dice "no se puede conectar"** | Ejecuta **`abrir-firewall.bat`** (necesita permisos de administrador). Windows no tiene regla de entrada TCP para Python. |
+| El celular no abre la dirección | Misma WiFi en ambos (y que no sea una red de invitados que aísle los equipos). |
+| El QR no se ve en la consola | Abre `http://127.0.0.1:8765/qr` en la PC: ahí sale en grande y se renueva solo. |
+| "Ese código ya se usó o pasó su tiempo" | Cada QR vale 30 segundos y sirve una sola vez. Escanea el que muestra la PC en ese momento. |
 | "PIN incorrecto" siempre | El PIN caduca cada 5 minutos. Mira el valor actual en la consola de la PC o pulsa el botón **PIN** de la app. |
 | El puntero va lento o rapidísimo | Ajustes → velocidad del puntero (1,6× es el valor por defecto). |
 | El scroll va al revés | Ajustes → desactiva *Desplazamiento natural*. |
 | Algo se quedó arrastrando | Pulsa **Soltar** (o el botón **Puntero** de la barra superior). |
 | "No se pudo abrir el puerto 8765" | Otro programa lo ocupa: `iniciar.bat --port 8899`. |
+| Quiero saber por qué no conecta | `python tools/diagnostico_red.py 8765` |
 | Quiero comprobar que todo está bien | Doble clic en **`probar.bat`** (35 pruebas de control + arrastre + QR). |
 
 ---
