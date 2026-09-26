@@ -87,6 +87,7 @@ const state = {
   wakeLock: null,
   qrDescartado: false,      // el usuario ha decidido escribir el PIN
   tokenDescartado: false,   // ya se reintento sin el token guardado
+  detenido: false,          // el servicio se ha detenido (no reconectar)
 };
 
 /* ------------------------------------------------------------ utilidades */
@@ -199,8 +200,13 @@ function connect() {
   socket.onclose = () => {
     state.authorized = false;
     stopPing();
-    setStatus('Desconectado', 'offline');
     setMode('pointer');
+    if (state.detenido) {
+      // El servidor avisó de que se detenía: no se reintenta.
+      setStatus('Servicio detenido', 'offline');
+      return;
+    }
+    setStatus('Desconectado', 'offline');
     scheduleReconnect();
   };
 
@@ -314,6 +320,21 @@ function handleMessage(message) {
 
     case 'denied':
       toast(message.reason || 'Acción no permitida');
+      break;
+
+    case 'shutdown':
+      // El servidor se está deteniendo: no tiene sentido reconectar.
+      state.detenido = true;
+      clearTimeout(state.retryTimer);
+      stopPing();
+      setStatus('Servicio detenido', 'offline');
+      closeSheets();
+      el.app.hidden = true;
+      el.auth.hidden = false;
+      el.authError.textContent = 'RemotePad se ha detenido en la PC. '
+        + 'Vuelve a iniciarlo con iniciar.bat y escanea el código QR.';
+      el.authError.hidden = false;
+      el.authBtn.disabled = false;
       break;
   }
 }
@@ -866,6 +887,27 @@ function bindUI() {
     try { state.ws.close(); } catch (_) {}
   });
 
+  // --- detener el servicio en la PC -------------------------------------
+  $('btn-stop').addEventListener('click', async () => {
+    if (!window.confirm('¿Detener RemotePad en la PC?\n\n'
+        + 'Se cerrará el servidor y habrá que volver a iniciarlo con '
+        + 'iniciar.bat.')) {
+      return;
+    }
+    closeSheets();
+    // Si estamos en la propia PC, la via directa es el endpoint local; si no,
+    // se pide por el WebSocket (que exige estar ya autorizado).
+    try {
+      const response = await fetch('api/stop', { method: 'POST' });
+      if (response.ok) {
+        toast('Deteniendo RemotePad…', 3000);
+        return;
+      }
+    } catch (_) { /* no somos la PC: se pide por el WebSocket */ }
+    send('comando_detener', {});
+    toast('Pidiendo detener RemotePad…', 3000);
+  });
+
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') closeSheets();
   });
@@ -964,8 +1006,8 @@ async function qrLogin() {
 
   if (response.status === 403) {
     // El servidor ha respondido: la red funciona. El codigo ya no vale.
-    showAuthError('El código caducó o ya se usó (duran 30 segundos). '
-      + 'Mira la PC: aparece uno nuevo cada 30 segundos. Escanea ese.');
+    showAuthError('El código caducó o ya se usó (duran 3 minutos). '
+      + 'Mira la PC: aparece uno nuevo cada 3 minutos. Escanea ese.');
     return false;
   }
 

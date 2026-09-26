@@ -32,10 +32,21 @@ de uno correcto por el tiempo que tarda en responder.
 
 ### Código QR de un solo uso
 
-Ver [qr.md](qr.md). Su clave **vale 30 segundos**, se invalida al primer canje y
-se compara también en tiempo constante. Es una ventana corta a propósito: el
-panel de la PC muestra siempre uno vigente, pero una foto del código deja de
-servir enseguida.
+Ver [qr.md](qr.md). Su clave **vale 3 minutos**, se invalida al primer canje y se
+compara también en tiempo constante. El panel de la PC muestra siempre uno
+vigente, pero una foto del código deja de servir a los pocos minutos.
+
+### Detener el servicio
+
+- **Desde el celular**: el botón de *Ajustes* pide la parada por el WebSocket, y
+  solo funciona si el dispositivo **ya está autorizado**. Cualquiera que haya
+  entrado puede apagar el servidor, del mismo modo que puede mover tu puntero.
+- **Desde la PC**: `/api/stop` (el panel o una consola). **Solo responde a la
+  propia PC**, para que nadie de la red pueda apagarlo por esa vía.
+- **Desde la consola**: escribir `q` y pulsar ENTER.
+
+Apagar el servidor no borra los tokens: al volver a arrancarlo, los celulares
+que ya estaban autorizados entran sin pedir nada (hasta 30 días).
 
 ### Token de dispositivo
 

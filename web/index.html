@@ -33,8 +33,8 @@
     <p id="auth-error" class="error" hidden></p>
     <button id="auth-btn" type="submit" class="primary">Conectar</button>
     <p id="pin-live" class="pin-live" hidden>PIN actual en la PC: <b id="pin-live-value"></b></p>
-    <p class="tiny">El código QR vale 30 segundos y se renueva solo: si caducó,
-      escanea el que muestra la PC en ese momento. El PIN dura 5 minutos.</p>
+    <p class="tiny">El código QR vale 3 minutos y se renueva solo: si caducó,
+      escanea el que muestra la PC. El PIN dura 5 minutos.</p>
   </form>
 </div>
 
@@ -230,6 +230,7 @@
     </label>
     <div class="sheet-actions">
       <button class="key" id="btn-fullscreen">Pantalla completa</button>
+      <button class="key" id="btn-stop">Detener RemotePad en la PC</button>
       <button class="key" id="btn-logout">Olvidar este dispositivo</button>
     </div>
     <p class="tiny" id="about"></p>

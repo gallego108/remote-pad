@@ -23,23 +23,21 @@ Poner el PIN en la URL sería más corto, pero quedaría en el historial del
 navegador y en cualquier registro, y valdría hasta que caducara. Con una clave
 de un solo uso:
 
-- **vale 30 segundos** (`QR_VALID_SECONDS`), así que solo sirve si escaneas el
-  código que está en pantalla en ese momento;
+- **vale 3 minutos** (`QR_VALID_SECONDS`), tiempo de sobra para apuntar con la
+  cámara sin prisas;
 - **se invalida al primer canje**, así que el enlace guardado ya no sirve;
 - el PIN nunca viaja en una URL.
 
 La comparación se hace en **tiempo constante** (`hmac.compare_digest`) y tras
 10 fallos desde una misma dirección se bloquea el canje 5 minutos.
 
-### Por qué 30 segundos
+### Por qué 3 minutos
 
-Es el equilibrio entre comodidad y exposición. El panel de la PC **genera un
-código nuevo automáticamente** al agotarse la ventana, de modo que siempre hay
-uno vigente en pantalla sin intervención; y si te demoras y el que escaneaste
-acaba de expirar, basta con volver a apuntar al siguiente (aparece en un
-segundo). La contrapartida de una ventana corta es que el QR de la **consola es
-una foto fija**: caduca a los 30 segundos y ya no se renueva ahí, por lo que
-para uso continuado conviene el panel `/qr`.
+Es el equilibrio entre comodidad y exposición. Tres minutos dan margen para
+escanear sin agobios, y el panel de la PC **genera un código nuevo
+automáticamente** al agotarse la ventana, de modo que siempre hay uno vigente en
+pantalla sin intervención. La consola también muestra uno nuevo sola, y
+pulsando ENTER se pide otro al instante.
 
 La rotación la hace `Gateway.rotate_qr_key_if_needed()`, que se ejecuta en cada
 ciclo del bucle de animación y también desde el flujo de eventos del panel.
@@ -177,7 +175,7 @@ la alternativa cuando el QR no cabe o no se lee bien en la consola.
 
 - **Solo responde a la propia PC** (`127.0.0.1` / `::1`): la página contiene el
   PIN y la clave, así que no se sirve al resto de la red.
-- **Se renueva solo**: cada 30 segundos pide un código nuevo a `/qr/new` y lo
+- **Se renueva solo**: cada 3 minutos pide un código nuevo a `/qr/new` y lo
   redibuja, así que en pantalla siempre hay uno vigente. La renovación se pide
   **5 segundos antes** de que caduque, para no mostrar nunca uno vencido.
 - Recibe además los cambios por **server-sent events** (`/qr/stream`), y si el

@@ -152,7 +152,7 @@
 <div class="url" id="url"></div>
 
 <div class="meta">
-  <span>Este código vale <span class="timer" id="timer">30 s</span> y se renueva solo</span>
+  <span>Este código vale <span class="timer" id="timer">3:00</span> y se renueva solo</span>
   <button id="new">Generar uno nuevo</button>
 </div>
 
@@ -205,7 +205,7 @@ function apply(data) {
   timer.classList.remove('expired');
 }
 
-/** Pide al servidor un codigo nuevo (tambien se renueva solo cada 30 s). */
+/** Pide al servidor un codigo nuevo (tambien se renueva solo). */
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
@@ -227,7 +227,10 @@ function tick() {
     refresh();
     return;
   }
-  timer.textContent = seconds + ' s';
+  // Con ventanas de minutos conviene mostrar "3:00" y no "180 s".
+  const minutos = Math.floor(seconds / 60);
+  const resto = String(seconds % 60).padStart(2, '0');
+  timer.textContent = minutos > 0 ? minutos + ':' + resto : seconds + ' s';
   timer.classList.remove('expired');
   // Renovacion preventiva: nunca se llega a mostrar uno caducado.
   if (Date.now() > expiresAt - REFRESH_MARGIN_MS) refresh();

@@ -32,10 +32,18 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
    ```
 
 4. **Apunta con la cámara del celular al código**: se abre el navegador solo y
-   entras directamente, sin escribir nada. El código vale **30 segundos** y se
-   renueva solo; si tardas, escanea el que aparezca en ese momento.
+   entras directamente, sin escribir nada. El código vale **3 minutos** y se
+   renueva solo, así que hay tiempo de sobra para escanear.
 5. Si el QR no te resulta cómodo, abre `http://192.168.1.9:8765` y escribe el
    PIN de 6 dígitos.
+
+### Para detenerlo
+
+- **Desde el celular**: *Ajustes → Detener RemotePad en la PC* (pide
+  confirmación y solo funciona si ya entraste).
+- **Desde la consola de la PC**: escribe `q` y pulsa ENTER, o `Ctrl+C`.
+- Al detenerse, los celulares conectados lo avisan en pantalla; los accesos
+  guardados siguen valiendo para la próxima vez.
 
 > ### Si el celular dice "no se puede conectar"
 >
@@ -54,7 +62,7 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
 
 > **Si el QR no cabe en la consola**, en la PC se abre automáticamente una
 > página con el código en grande (`http://127.0.0.1:8765/qr`), que se
-> **renueva sola cada 30 segundos** y tiene un botón para generar uno nuevo.
+> **renueva sola cada 3 minutos** y tiene un botón para generar uno nuevo.
 
 > **La primera vez**, Windows preguntará si quieres permitir el tráfico de red
 > para Python. Marca **Redes privadas** y acepta; si lo cancelas, usa
@@ -70,10 +78,11 @@ El QR contiene una dirección con una **clave de un solo uso**
 (`http://192.168.1.9:8765/?k=...`). Al escanearlo, el celular canjea esa clave
 por un token de dispositivo y entra sin pedir el PIN.
 
-- La clave vale **30 segundos** y **se invalida al primer uso**, así que el
-  enlace que quede en el historial del navegador ya no sirve.
-- El panel de la PC **genera un código nuevo cada 30 segundos**: siempre hay uno
-  vigente en pantalla, sin que tengas que hacer nada.
+- La clave vale **3 minutos** y **se invalida al primer uso**, así que el enlace
+  que quede en el historial del navegador ya no sirve.
+- El panel de la PC **genera un código nuevo cada 3 minutos**: siempre hay uno
+  vigente en pantalla, sin que tengas que hacer nada. En la consola se muestra
+  uno nuevo sola, y con ENTER pides otro al instante.
 - Solo lo puede leer quien esté delante de la pantalla de tu PC (o quien tú se
   lo muestres), igual que el PIN.
 - La página que muestra el código en grande **solo responde a la propia PC**:
@@ -174,7 +183,7 @@ remote-pad/
     ├── test_drag.py         Prueba real de arrastrar y soltar
     ├── test_qr.py           Verificación del generador de QR
     ├── test_qr_login.py     Prueba del acceso por QR de extremo a extremo
-    ├── test_qr_window.py    Ventana de 30 segundos del QR
+    ├── test_qr_window.py    Ventana de 3 minutos del QR
     ├── check_ui.py          Coherencia entre HTML, CSS y JS
     └── make_icons.py        Genera los iconos de la app
 ```
@@ -237,7 +246,7 @@ Detalles que marcan la diferencia:
 | **El celular dice "no se puede conectar"** | Ejecuta **`abrir-firewall.bat`** (necesita permisos de administrador). Windows no tiene regla de entrada TCP para Python. |
 | El celular no abre la dirección | Misma WiFi en ambos (y que no sea una red de invitados que aísle los equipos). |
 | El QR no se ve en la consola | Abre `http://127.0.0.1:8765/qr` en la PC: ahí sale en grande y se renueva solo. |
-| "Ese código ya se usó o pasó su tiempo" | Cada QR vale 30 segundos y sirve una sola vez. Escanea el que muestra la PC en ese momento. |
+| "Ese código ya se usó o pasó su tiempo" | Cada QR vale 3 minutos y sirve una sola vez. Escanea el que muestra la PC en ese momento. |
 | "PIN incorrecto" siempre | El PIN caduca cada 5 minutos. Mira el valor actual en la consola de la PC o pulsa el botón **PIN** de la app. |
 | El puntero va lento o rapidísimo | Ajustes → velocidad del puntero (1,6× es el valor por defecto). |
 | El scroll va al revés | Ajustes → desactiva *Desplazamiento natural*. |

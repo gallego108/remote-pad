@@ -71,6 +71,7 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `get_state` | — | Resolución de pantalla, PIN actual y segundos restantes |
 | `get_driver` | — | Diagnóstico: botón que el servidor tiene presionado |
 | `refresh_pin` | — | PIN y segundos restantes |
+| `comando_detener` | — | Detiene el servidor. **Requiere estar ya autorizado.** Su respuesta se envía antes que el aviso `shutdown` |
 
 ## Mensajes del servidor
 
@@ -84,6 +85,7 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `qr_key` | `key` | La clave del QR se ha renovado (para el panel de la PC) |
 | `pong` | `ts` | Respuesta al `ping` |
 | `denied` | `reason` | Acción no permitida (por ejemplo, un espectador) |
+| `shutdown` | `reason` | El servidor se está deteniendo: el cliente no debe reconectar |
 | `pad_input` | `from`, `d` | Retransmisión a los espectadores |
 
 ## Reglas del servidor
@@ -108,7 +110,8 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `/qr/stream` | GET | **solo la PC** | Server-sent events: avisa cuando cambia la clave |
 | `/qr/new` | POST | **solo la PC** | Genera un QR nuevo |
 | `/api/qr-login` | POST | red local | Canjea la clave del QR por un token |
-| `/healthz` | GET | red local | `{ "ok": true }` |
+| `/api/stop` | POST | **solo la PC** | Detiene el servidor |
+| `/healthz` | GET | red local | `{ "ok": true, "version": "..." }` |
 | `/{archivo}` | GET | red local | Recursos estáticos (lista blanca de extensiones) |
 
 Los recursos estáticos se sirven con lista blanca de extensiones y

@@ -58,11 +58,11 @@ WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
 DEFAULT_PORT = 8765
 
 PIN_ROTATE_SECONDS = 300.0   # cada cuanto cambia el PIN de seguridad
-QR_VALID_SECONDS = 30.0      # cuanto vale cada codigo QR (de un solo uso)
+QR_VALID_SECONDS = 180.0     # cuanto vale cada codigo QR (3 minutos, un solo uso)
 
 # Sube al cambiar la parte web: sirve para comprobar en el celular que se esta
 # ejecutando la version nueva y no una copia guardada.
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -140,6 +140,16 @@ BANNER = r"""
 """
 
 
+def corta_duracion(segundos: float) -> str:
+    """Texto legible de una duracion: '30 segundos', '3 minutos'..."""
+    if segundos < 60:
+        return f"{int(segundos)} segundos"
+    minutos = segundos / 60
+    if minutos == int(minutos):
+        return f"{int(minutos)} minutos"
+    return f"{minutos:.1f} minutos"
+
+
 def print_qr_block(host: str, port: int, login_key: str, when: str = "") -> None:
     """
     Dibuja el QR en la consola con su pie de informacion.
@@ -160,8 +170,9 @@ def print_qr_block(host: str, port: int, login_key: str, when: str = "") -> None
     else:
         print("   (esta consola no admite color: usa el panel del navegador)")
     print()
-    print(f"   Vale {int(QR_VALID_SECONDS)} segundos: si tardas, se muestra uno")
-    print("   nuevo aqui solo. Tambien puedes pulsar ENTER para otro ahora.")
+    print(f"   Vale {corta_duracion(QR_VALID_SECONDS)} y se renueva solo: si tardas,")
+    print("   aqui abajo aparece uno nuevo.")
+    print("   ENTER = otro codigo ahora   ·   escribe q + ENTER = detener")
     print(f"   Panel siempre vigente:  http://127.0.0.1:{port}/qr")
 
 
@@ -224,6 +235,11 @@ class Gateway:
         # Redibujo del QR en la consola (lo activa run() segun los argumentos).
         self.show_qr_console = False
         self.console_host = self.lan_host
+        # Parada ordenada: la marca el boton del celular (o el comando de la
+        # consola) y la espera run() para cerrar todo limpiamente.
+        self.stop_event: Optional[asyncio.Event] = None
+        self.shutting_down = False
+        self._parada_pedida: Optional[str] = None
 
         self.pin = new_pin()
         self._pin_generated = time.monotonic()
@@ -247,6 +263,24 @@ class Gateway:
         self._idle_cleanup_done = False
 
     # -------------------------------------------------------------- PIN/token
+    def request_stop(self, motivo: str = "") -> bool:
+        """
+        Pide detener el servidor.
+
+        Solo la primera peticion hace efecto; las siguientes se ignoran (el
+        cierre tarda un instante y pueden llegar varias). Devuelve True si esta
+        peticion es la que inicia la parada.
+        """
+        if self.shutting_down:
+            return False
+        self.shutting_down = True
+        log.info("Deteniendo RemotePad%s", f": {motivo}" if motivo else "")
+        # Se avisa a los celulares conectados antes de cortar.
+        self.broadcast({"t": "shutdown", "reason": motivo or "El servidor se ha detenido"})
+        if self.stop_event is not None:
+            self.stop_event.set()
+        return True
+
     def rotate_pin_if_needed(self) -> None:
         if time.monotonic() - self._pin_generated < PIN_ROTATE_SECONDS:
             return
@@ -257,12 +291,14 @@ class Gateway:
 
     def rotate_qr_key_if_needed(self) -> None:
         """
-        El codigo QR vale 30 segundos.
+        El codigo QR vale 3 minutos.
 
         Pasado ese tiempo se genera otro automaticamente, de modo que el panel
         de la PC siempre muestra un codigo vigente. Es de un solo uso: al
         canjearlo tambien se renueva aqui.
         """
+        if self.shutting_down:
+            return
         if time.monotonic() - self.login_key_generated < QR_VALID_SECONDS:
             return
         self.refresh_login_key()
@@ -634,6 +670,16 @@ class Gateway:
         if action == "refresh_pin":
             return {"pin": self.pin, "pin_seconds": self.pin_seconds_left()}
 
+        if action == "comando_detener":
+            # Solo un dispositivo ya autorizado puede parar el servicio: la
+            # comprobacion de antes de este bloque lo garantiza.
+            #
+            # La parada se pide DESPUES de responder, al salir de esta funcion:
+            # esta respuesta se encola antes que el aviso de parada, y asi el
+            # celular recibe la confirmacion y no solo un "desconectado".
+            self._parada_pedida = f"peticion de {client.addr}"
+            return {"ok": True, "detenido": True}
+
         return {"error": f"accion desconocida: {action}"}
 
     # ----------------------------------------------------------- autenticacion
@@ -761,6 +807,12 @@ class Gateway:
         if response is not None:
             self._enqueue(client, {"t": "response", "a": action, "d": response})
 
+        # La parada se ejecuta despues de encolar la respuesta, para que el
+        # cliente reciba la confirmacion y despues el aviso de cierre.
+        if self._parada_pedida:
+            motivo, self._parada_pedida = self._parada_pedida, None
+            self.request_stop(motivo)
+
     def _within_rate(self, client: Client) -> bool:
         window = int(time.monotonic())
         if client.rate_window != window:
@@ -871,7 +923,7 @@ def build_app(gateway: Gateway) -> web.Application:
         if token is None:
             # Nota: si el celular ha podido llegar hasta aqui, la red y el
             # firewall funcionan. Lo unico que falla es que ese codigo ya no
-            # vale (pasaron los 30 segundos o ya se uso).
+            # vale (pasaron los 3 minutos o ya se uso).
             log.warning(
                 "QR rechazado desde %s: el codigo ya no vale. Los codigos duran "
                 "%d segundos y sirven una sola vez; en la consola se muestra uno "
@@ -921,7 +973,7 @@ def build_app(gateway: Gateway) -> web.Application:
         Genera un QR nuevo y devuelve sus datos.
 
         Lo usa el panel de la PC: tanto el boton como la renovacion automatica
-        cada 30 segundos. Devolver los datos evita tener que recargar.
+        cada 3 minutos. Devolver los datos evita tener que recargar.
         """
         if not is_local(request):
             raise web.HTTPForbidden(text="Solo en la PC")
@@ -935,14 +987,29 @@ def build_app(gateway: Gateway) -> web.Application:
             "matrix": qr.encode(url, "M"),
         })
 
+    async def health(request: web.Request) -> web.StreamResponse:
+        return web.json_response({"ok": True, "version": APP_VERSION})
+
+    async def api_stop(request: web.Request) -> web.StreamResponse:
+        """
+        Detiene el servidor. Solo desde la propia PC: cualquiera de la red
+        podria apagarlo, y para eso esta el boton de la app (que exige estar
+        ya autenticado).
+        """
+        if not is_local(request):
+            raise web.HTTPForbidden(text="Solo se puede detener desde la PC")
+        gateway.request_stop("desde el navegador de la PC")
+        return web.json_response({"ok": True})
+
     app.router.add_get("/", index)
     app.router.add_get("/ws", gateway.ws_handler)
     app.router.add_get("/qr", qr_page)
     app.router.add_get("/qr/stream", qr_stream)
     app.router.add_post("/qr/new", qr_new)
     app.router.add_post("/api/qr-login", qr_login)
+    app.router.add_post("/api/stop", api_stop)
     app.router.add_get("/{name}", static_file)
-    app.router.add_get("/healthz", lambda _r: web.json_response({"ok": True}))
+    app.router.add_get("/healthz", health)
     return app
 
 
@@ -978,7 +1045,7 @@ async def run(args: argparse.Namespace) -> None:
     gateway.lan_host = shown_host
     gateway.console_host = shown_host
     # La consola redibuja el QR cada vez que cambia, para que el que esta a la
-    # vista nunca este caducado (vale 30 segundos).
+    # vista nunca este caducado.
     gateway.show_qr_console = (
         not args.no_qr and not args.no_auth and qr.supports_color()
     )
@@ -991,49 +1058,84 @@ async def run(args: argparse.Namespace) -> None:
         webbrowser.open(f"http://127.0.0.1:{args.port}/qr")
 
     loop = asyncio.get_running_loop()
+    gateway.stop_event = asyncio.Event()
     animations = loop.create_task(gateway.animation_loop())
-    keyboard = loop.create_task(watch_enter_key(gateway))
+    console = loop.create_task(console_commands(gateway))
     try:
-        await asyncio.Event().wait()          # corre hasta Ctrl+C
+        await gateway.stop_event.wait()      # hasta Ctrl+C o peticion de parada
     except asyncio.CancelledError:
         pass
     finally:
-        for task in (animations, keyboard):
+        gateway.shutting_down = True         # evita mas avisos durante el cierre
+        # Un instante para que el aviso "shutdown" llegue a los celulares antes
+        # de cerrar las conexiones: asi muestran "servicio detenido" y no un
+        # simple "desconectado".
+        await asyncio.sleep(0.4)
+        for task in (animations, console):
             task.cancel()
         await gateway.shutdown()
         await runner.cleanup()
+        print("\n" + "=" * 58)
+        print("   RemotePad se ha detenido. Puedes cerrar esta ventana.")
+        print("=" * 58 + "\n")
 
 
-async def watch_enter_key(gateway: Gateway) -> None:
+async def console_commands(gateway: Gateway) -> None:
     """
-    Pulsar ENTER en la consola imprime un QR nuevo al instante.
+    Lee lo que se escribe en la consola.
 
-    Es el respaldo del redibujado automatico: si la consola no admite colores o
-    el codigo ya ha caducado, el usuario tiene una forma directa de pedir otro.
+    - ENTER (linea vacia): imprime un QR nuevo al instante.
+    - q / Q / salir / exit: detiene el servidor.
+    - cualquier otra cosa: muestra la ayuda.
+
+    La lectura se hace en un hilo *demonio* y no con run_in_executor: el hilo
+    que espera en input() no se puede interrumpir, y si no es demonio impide
+    que el proceso termine al detener el servicio (asyncio espera a sus hilos
+    antes de salir). Siendo demonio, cuando la tarea se cancela el proceso
+    puede cerrarse igualmente.
     """
-    if not gateway.show_qr_console:
-        return
+    import threading
 
     loop = asyncio.get_running_loop()
+    cola: asyncio.Queue = asyncio.Queue()
 
-    def read_line() -> str:
-        try:
-            return input()
-        except (EOFError, KeyboardInterrupt, OSError):
-            return "\x00"          # senal para terminar
+    def leer_consola() -> None:
+        while True:
+            try:
+                linea = input()
+            except (EOFError, KeyboardInterrupt, OSError, ValueError):
+                # Sin entrada disponible (por ejemplo si stdin esta cerrado):
+                # no hay nada mas que hacer, el hilo termina.
+                return
+            try:
+                loop.call_soon_threadsafe(cola.put_nowait, linea)
+            except RuntimeError:
+                return          # el bucle ya se ha cerrado
 
+    threading.Thread(target=leer_consola, daemon=True, name="consola").start()
+
+    parar = {"q", "quit", "salir", "exit", "s"}
     try:
         while True:
-            line = await loop.run_in_executor(None, read_line)
-            if line == "\x00":
+            linea = await cola.get()
+            comando = linea.strip().lower()
+            if comando in parar:
+                gateway.request_stop("desde la consola")
                 return
-            gateway.refresh_login_key()
-            print_qr_block(gateway.console_host, gateway.port,
-                           gateway.login_key, when="codigo nuevo")
+            if comando in ("", "qr"):
+                if gateway.show_qr_console:
+                    gateway.refresh_login_key()
+                    print_qr_block(gateway.console_host, gateway.port,
+                                   gateway.login_key, when="codigo nuevo")
+                else:
+                    print("   Este terminal no admite el QR en color; "
+                          "usa el panel del navegador.")
+                continue
+            print("   ENTER = nuevo codigo QR   ·   q + ENTER = detener")
     except asyncio.CancelledError:
         pass
     except Exception:
-        log.debug("lectura de ENTER terminada", exc_info=True)
+        log.debug("lectura de consola terminada", exc_info=True)
 
 
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:

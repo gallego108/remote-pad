@@ -133,10 +133,20 @@ que use el código de la página.
 
 ### "Ese código ya se usó o pasó su tiempo"
 
-Cada QR **vale 30 segundos** y sirve **una sola vez**. Escanea el que muestra la
-PC en ese momento: el panel `/qr` genera uno nuevo automáticamente, así que
-siempre hay uno vigente. Si el que escaneaste acaba de expirar, vuelve a apuntar
-al siguiente.
+Cada QR **vale 3 minutos** y sirve **una sola vez**. Escanea el que muestra la
+PC en ese momento: el panel `/qr` y la consola generan uno nuevo
+automáticamente, así que siempre hay uno vigente.
+
+### El servicio no se detiene
+
+- Escribe **`q` + ENTER** en la consola del servidor, o **`Ctrl+C`**.
+- Desde el celular: *Ajustes → Detener RemotePad en la PC* (solo funciona si ya
+  entraste antes).
+- Si el botón del celular no hace nada, puede que la app del teléfono siga con
+  una copia antigua: borra los datos del sitio y recarga.
+- Comprueba que no haya **otro servidor** escuchando en otro puerto: cada
+  `iniciar.bat` abre un proceso. Se ven con
+  `netstat -ano | findstr LISTENING | findstr :87`.
 
 ### El QR no se lee
 

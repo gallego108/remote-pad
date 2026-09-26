@@ -1,5 +1,41 @@
 # Historial de cambios
 
+## 1.3.0
+
+El código QR dura 3 minutos y se puede detener el servicio.
+
+### Cambiado
+
+- El código QR pasa de 30 segundos a **3 minutos** (`QR_VALID_SECONDS`): da
+  margen para apuntar con la cámara sin prisas. Sigue siendo de un solo uso y se
+  renueva solo al agotarse la ventana (en el panel y en la consola).
+
+### Añadido
+
+- **Detener el servicio**, por tres vías:
+  - *Ajustes → Detener RemotePad en la PC* en el celular (pide confirmación y
+    solo funciona si el dispositivo **ya está autorizado**);
+  - escribir **`q` + ENTER** en la consola del servidor (también acepta
+    `salir`, `exit`, `quit`);
+  - `POST /api/stop`, que **solo responde a la propia PC**.
+- Al detenerse, los celulares conectados reciben el aviso `shutdown` y muestran
+  «Servicio detenido» en lugar de «Desconectado», sin intentar reconectar.
+- La consola indica ahora cómo parar (`ENTER = nuevo código QR · q = detener`) y
+  despide con un mensaje claro al cerrarse.
+- `/healthz` informa también de la versión del servidor.
+- `tools/test_stop.py`: comprueba las tres vías de parada de extremo a extremo.
+
+### Corregido
+
+- **El proceso no terminaba al detener el servicio.** La parada se completaba
+  (se cerraba el servidor y se soltaban los botones), pero el proceso se quedaba
+  vivo: el hilo que lee la consola quedaba bloqueado en `input()` y asyncio
+  espera a sus hilos antes de salir. Ahora la lectura se hace en un hilo
+  demonio, y el proceso termina en menos de un segundo.
+- La confirmación de `comando_detener` se envía **antes** del aviso de cierre,
+  para que el celular sepa que la petición se aceptó y no solo que se ha
+  desconectado.
+
 ## 1.2.0
 
 Arregla el caso real de "el QR no entra": el celular ejecutaba una copia vieja.
