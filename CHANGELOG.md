@@ -1,5 +1,18 @@
 # Historial de cambios
 
+## 1.6.5
+
+### Arreglado
+
+- **La pinza (zoom) no funcionaba.** Para entrar en modo zoom se pedía que los
+  dedos se separaran 22 px, pero el scroll se decidía con solo 16 px de
+  movimiento. Como en una pinza las dos cifras crecen a la vez, **el scroll
+  ganaba siempre la carrera** y el zoom no llegaba a activarse nunca.
+  Ahora no se comparan contra umbrales distintos, sino **entre sí**: si los
+  dedos se han separado más de lo que ha avanzado su punto medio, es pinza;
+  si no, es scroll. El punto medio es la clave: al mover los dedos juntos no
+  avanza la distancia, y al separarlos la distancia crece el doble.
+
 ## 1.6.4
 
 ### Arreglado

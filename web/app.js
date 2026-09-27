@@ -458,7 +458,6 @@ const LONG_PRESS_MS = 380;
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_SLOP = 30;
 const SCROLL_SLOP = 16;
-const PINCH_SLOP = 22;       // cambio de distancia entre dedos para el zoom
 const EDGE_ZONE = 28;        // ancho de la zona de borde (atras/adelante)
 const EDGE_TRIGGER = 48;     // recorrido horizontal para dispararlo
 const THREE_SLOP = 46;       // recorrido del gesto con 3 dedos
@@ -578,6 +577,7 @@ function onPointerDown(event) {
       gesture.twoFinger = {
         start: ahora, moved: 0, stretch: 0, active: true,
         mode: '', lastDist: dist, startDist: dist,
+        lastCenter: averagePointer(),
         // Datos para decidir si fue un toque intencionado:
         joined: ahora - gesture.firstDownAt,   // cuanto tardo el 2.o dedo
         dist,                                   // separacion entre los dedos
@@ -714,23 +714,35 @@ function onPointerMove(event) {
   gesture.twoFinger.lastDist = dist;
 
   if (!gesture.twoFinger.mode) {
-    gesture.twoFinger.moved += Math.hypot(dx, dy);
+    // "moved" es lo que se ha desplazado el PUNTO MEDIO entre los dedos, no la
+    // suma del movimiento de cada uno. Ese detalle es la clave: al mover los
+    // dedos juntos (scroll) el punto medio avanza y la distancia no cambia,
+    // mientras que al separarlos (pinza) la distancia crece el DOBLE de lo que
+    // avanza el punto medio. Comparando las dos cifras se distinguen bien.
+    const centro = averagePointer();
+    gesture.twoFinger.moved += Math.hypot(
+      centro.x - gesture.twoFinger.lastCenter.x,
+      centro.y - gesture.twoFinger.lastCenter.y,
+    );
+    gesture.twoFinger.lastCenter = centro;
     gesture.twoFinger.stretch += Math.abs(distDelta);
-    // La pinza solo manda si los dedos se separan/juntan MAS de lo que se
-    // desplazan en conjunto: asi un scroll normal (dedos en paralelo) no se
-    // confunde con un zoom.
-    if (settings.pinchZoom
-        && gesture.twoFinger.stretch > PINCH_SLOP
-        && gesture.twoFinger.stretch > gesture.twoFinger.moved * 0.5) {
-      gesture.twoFinger.mode = 'pinch';
-      toast('Zoom');
-    } else if (gesture.twoFinger.moved > SCROLL_SLOP) {
-      gesture.twoFinger.mode = 'scroll';
-      gesture.acc.x = 0;
-      gesture.acc.y = 0;
-      if (state.mode !== 'pointer') {   // arrastrando + scroll = soltar
-        releaseLeft();
-        setMode('pointer');
+    // Se decide UNA sola vez, en cuanto hay movimiento suficiente:
+    // si los dedos se han separado mas de lo que ha avanzado su punto medio,
+    // es una pinza (zoom); si no, es scroll.
+    const total = gesture.twoFinger.moved + gesture.twoFinger.stretch;
+    if (total > SCROLL_SLOP) {
+      if (settings.pinchZoom
+          && gesture.twoFinger.stretch > gesture.twoFinger.moved) {
+        gesture.twoFinger.mode = 'pinch';
+        toast('Zoom');
+      } else {
+        gesture.twoFinger.mode = 'scroll';
+        gesture.acc.x = 0;
+        gesture.acc.y = 0;
+        if (state.mode !== 'pointer') {   // arrastrando + scroll = soltar
+          releaseLeft();
+          setMode('pointer');
+        }
       }
     }
   }
