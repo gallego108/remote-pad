@@ -465,6 +465,18 @@ const THREE_SLOP = 46;       // recorrido del gesto con 3 dedos
 const INERTIA_MIN = 0.35;    // velocidad minima (px/ms) para que haya inercia
 const INERTIA_DECAY = 0.9;   // cuanto se frena cada 16 ms
 
+/* Toque con dos dedos = clic derecho. Para que NO salga solo (por rozar la
+   pantalla con dos dedos, o por un pulgar apoyado) se exige que los dos dedos:
+     - bajen casi a la vez (si uno llevaba rato apoyado, no cuenta),
+     - esten separados (un roce del pulgar junto al dedo no cuenta),
+     - no muevan el puntero y duren poco,
+     - y se levanten tambien casi a la vez.
+   Ademas el resultado se decide cuando se levantan AMBOS, asi no depende de
+   cual se suelta primero (que era lo que hacia que saliera "a veces".). */
+const TWO_FINGER_JOIN_MS = 200;    // maxima diferencia al apoyar los dos dedos
+const TWO_FINGER_LIFT_MS = 220;    // maxima diferencia al levantarlos
+const TWO_FINGER_MIN_DIST = 35;    // separacion minima entre los dos dedos
+
 const gesture = {
   pointers: new Map(),
   startPos: { x: 0, y: 0 },
@@ -477,6 +489,7 @@ const gesture = {
   acc: { x: 0, y: 0 },
   streamTimer: null,
   twoFinger: { start: 0, moved: 0, active: false, mode: '', lastDist: 0 },
+  firstDownAt: 0,           // cuando bajo el primer dedo (para el toque de 2)
   pinchAcc: 0,
   edge: '',                 // '', 'left' o 'right'
   edgeFired: false,
@@ -534,6 +547,7 @@ function onPointerDown(event) {
   if (count === 1) {
     gesture.startPos = { x: point.x, y: point.y };
     gesture.startTime = performance.now();
+    gesture.firstDownAt = gesture.startTime;
     gesture.startCount = 1;
     gesture.moved = 0;
     gesture.acc.x = 0;
@@ -560,9 +574,14 @@ function onPointerDown(event) {
       gesture.acc.y = 0;
       const pts = [...gesture.pointers.values()];
       const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const ahora = performance.now();
       gesture.twoFinger = {
-        start: performance.now(), moved: 0, stretch: 0, active: true,
+        start: ahora, moved: 0, stretch: 0, active: true,
         mode: '', lastDist: dist, startDist: dist,
+        // Datos para decidir si fue un toque intencionado:
+        joined: ahora - gesture.firstDownAt,   // cuanto tardo el 2.o dedo
+        dist,                                   // separacion entre los dedos
+        liftAt: 0,                              // cuando se levanto el 1.o
       };
       gesture.pinchAcc = 0;
     } else {
@@ -779,15 +798,27 @@ function onPointerUp(event) {
   }
 
   // ------------------------------------------------------- gestos con 2 dedos
+  // El clic derecho se decide cuando se han levantado AMBOS dedos: asi el
+  // resultado no depende de cual se suelta primero (que era lo que hacia que
+  // "a veces" saliera un clic derecho sin motivo).
   if (gesture.twoFinger.active && remaining <= 1) {
-    const twoMs = performance.now() - gesture.twoFinger.start;
-    const twoTap = !wasScroll && twoMs < 320 && gesture.twoFinger.moved <= SCROLL_SLOP;
-    gesture.twoFinger.active = false;
-    if (twoTap && remaining === 0) {
-      resetGesture(remaining);
-      send('mouse_click', { button: 'right', clicks: 1 });
-      buzz(14);
-      return;
+    const ahora = performance.now();
+    if (!gesture.twoFinger.liftAt) gesture.twoFinger.liftAt = ahora;
+    const juntos = ahora - gesture.twoFinger.liftAt;
+    const dosMs = ahora - gesture.twoFinger.start;
+    const intencionado = !wasScroll
+      && dosMs < 320
+      && gesture.twoFinger.moved <= SCROLL_SLOP
+      && gesture.twoFinger.joined <= TWO_FINGER_JOIN_MS
+      && gesture.twoFinger.dist >= TWO_FINGER_MIN_DIST;
+    if (remaining === 0) {
+      gesture.twoFinger.active = false;
+      if (intencionado && juntos <= TWO_FINGER_LIFT_MS) {
+        resetGesture(0);
+        send('mouse_click', { button: 'right', clicks: 1 });
+        buzz(14);
+        return;
+      }
     }
     resetGesture(remaining);
     return;
@@ -806,6 +837,10 @@ function onPointerUp(event) {
     buzz(14);
     return;
   }
+
+  // Un toque con dos dedos ya se ha resuelto arriba (clic derecho o nada):
+  // nunca debe acabar en un clic izquierdo, que es lo que lo hacia imprevisible.
+  if (gesture.startCount >= 2) return;
 
   // ------------------------------------------------------------ toque simple
   if (!wasTap || !settings.tapClick) {

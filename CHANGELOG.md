@@ -1,5 +1,19 @@
 # Historial de cambios
 
+## 1.6.4
+
+### Arreglado
+
+- **A veces salía un clic derecho sin ningún motivo.** El toque con dos dedos se
+  decidía al levantar el **primer** dedo, así que el resultado dependía de cuál
+  se soltara antes: el mismo gesto acababa en clic derecho o en clic izquierdo
+  según el azar, y un roce con dos dedos bastaba para disparar el derecho. Ahora
+  se decide cuando se han levantado **los dos**, y solo cuenta como clic derecho
+  si los dedos bajaron casi a la vez (menos de 200 ms), están separados (35 px o
+  más) y se levantan también casi a la vez. Un roce, un pulgar apoyado o el final
+  de un scroll ya no disparan nada, y un toque con dos dedos **nunca** acaba en
+  clic izquierdo.
+
 ## 1.6.3
 
 ### Cambiado
