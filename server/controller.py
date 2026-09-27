@@ -225,6 +225,11 @@ class DesktopController:
         """Pide a Windows que no apague la pantalla mientras este activo."""
         return native_input.keep_display_awake(on)
 
+    # ---------------------------------------------------- perfiles por app
+    def foreground_app(self) -> str:
+        """Nombre del ejecutable en primer plano (para los perfiles por app)."""
+        return native_input.foreground_app()
+
     # -------------------------------------------------------------- teclado
     def key_tap(self, key: str, modifiers: Optional[Iterable[str]] = None) -> bool:
         """Pulsa una tecla o combinacion. True si se pudo enviar."""

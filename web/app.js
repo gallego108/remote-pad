@@ -77,6 +77,9 @@ const DEFAULTS = {
   threeFinger: true,
   edgeBack: true,
   pinchZoom: true,
+  learnAdaptive: true,      // el servidor aprende tu sensibilidad
+  learnTap: true,           // filtro que aprende a exigir mas en el toque de 2
+  learnThreshold: true,     // umbral pinza/scroll aprendido de tus gestos
 };
 
 const SETTINGS_KEY = 'remotepad.settings';
@@ -406,6 +409,8 @@ function handleMessage(message) {
         toast((message.d.text || '')
           ? 'Texto traído del PC'
           : 'El PC no tenía nada copiado');
+      } else if (message.a === 'learning' && message.d) {
+        pintarAprendizaje(message.d);
       } else if (message.d && message.d.error) {
         toast('No se pudo: ' + message.d.error);
       }
@@ -475,6 +480,143 @@ const INERTIA_DECAY = 0.9;   // cuanto se frena cada 16 ms
 const TWO_FINGER_JOIN_MS = 200;    // maxima diferencia al apoyar los dos dedos
 const TWO_FINGER_LIFT_MS = 220;    // maxima diferencia al levantarlos
 const TWO_FINGER_MIN_DIST = 35;    // separacion minima entre los dos dedos
+
+/* ------------------------------------------------- aprendizaje en el movil
+   Dos cosas que se ajustan solas mirando como usas el movil:
+
+   1) El umbral que separa "scroll" de "pinza". Se guarda la proporcion de cada
+      gesto (cuanto se separan los dedos frente a cuanto avanza su punto medio)
+      y se buscan los dos grupos con un k-means de 1 dimension. Si los grupos
+      estan claros, el umbral se coloca entre ellos.
+
+   2) Lo estricto que hay que ser con el toque de dos dedos. Si un clic derecho
+      va seguido de un movimiento, es que ha salido solo: se sube la exigencia.
+      Si no mueves nada despues, era lo que querias: se baja poco a poco. */
+const RATIOS_KEY = 'remotepad.ratios';
+const FIRMEZA_KEY = 'remotepad.firmeza';
+const MAX_RATIOS = 40;
+
+let ratios = [];
+try {
+  const guardados = JSON.parse(localStorage.getItem(RATIOS_KEY) || '[]');
+  if (Array.isArray(guardados)) {
+    ratios = guardados.filter((valor) => typeof valor === 'number');
+  }
+} catch (_) { ratios = []; }
+
+let firmeza = 0.5;   // 0 = permisivo, 1 = estricto
+try {
+  const valor = parseFloat(localStorage.getItem(FIRMEZA_KEY));
+  if (!Number.isNaN(valor)) firmeza = Math.max(0, Math.min(1, valor));
+} catch (_) { /* se queda en el valor por defecto */ }
+
+const postClic = { movido: 0, timer: null };
+
+function guardarRatios() {
+  try { localStorage.setItem(RATIOS_KEY, JSON.stringify(ratios.slice(-MAX_RATIOS))); } catch (_) {}
+}
+
+function guardarFirmeza() {
+  try { localStorage.setItem(FIRMEZA_KEY, String(firmeza)); } catch (_) {}
+}
+
+/** Umbral aprendido entre scroll y pinza (dos grupos, k-means de 1 dimension). */
+function umbralPinza() {
+  if (!settings.learnThreshold || ratios.length < 12) return 1.0;
+  let c1 = 0.15, c2 = 1.4;
+  for (let vuelta = 0; vuelta < 8; vuelta++) {
+    let suma1 = 0, n1 = 0, suma2 = 0, n2 = 0;
+    ratios.forEach((r) => {
+      if (Math.abs(r - c1) <= Math.abs(r - c2)) { suma1 += r; n1++; }
+      else { suma2 += r; n2++; }
+    });
+    if (n1) c1 = suma1 / n1;
+    if (n2) c2 = suma2 / n2;
+  }
+  // Si los dos grupos no se separan, mejor no tocar nada.
+  if (c2 - c1 < 0.4) return 1.0;
+  return Math.max(0.5, Math.min(1.6, (c1 + c2) / 2));
+}
+
+/** Umbrales del toque con dos dedos, segun lo estricto que haga falta. */
+function umbralesToque() {
+  const uso = settings.learnTap ? firmeza : 0.5;
+  return {
+    join: Math.round(TWO_FINGER_JOIN_MS - 80 * uso),
+    lift: Math.round(TWO_FINGER_LIFT_MS - 90 * uso),
+    dist: Math.round(TWO_FINGER_MIN_DIST + 30 * uso),
+  };
+}
+
+/** Acaba de salir un clic derecho: ya se vera si era lo que querias. */
+function anotarClicDerecho() {
+  if (!settings.learnTap) return;
+  clearTimeout(postClic.timer);
+  postClic.movido = 0;
+  postClic.timer = setTimeout(() => {
+    // Paso el tiempo sin mover el puntero: el clic era intencionado.
+    firmeza = Math.max(0, firmeza - 0.04);
+    guardarFirmeza();
+    postClic.movido = 0;
+    postClic.timer = null;
+  }, 1200);
+}
+
+/** Movimiento del puntero: si sigue a un clic derecho, ese clic sobraba. */
+function anotarMovimiento(distancia) {
+  if (!settings.learnTap || !postClic.timer) return;
+  postClic.movido += distancia;
+  if (postClic.movido > 30) {
+    clearTimeout(postClic.timer);
+    postClic.timer = null;
+    postClic.movido = 0;
+    firmeza = Math.min(1, firmeza + 0.15);
+    guardarFirmeza();
+    toast('Ajustando el toque con dos dedos…', 1600);
+  }
+}
+
+function reiniciarAprendizajeLocal() {
+  ratios = [];
+  firmeza = 0.5;
+  guardarRatios();
+  guardarFirmeza();
+  clearTimeout(postClic.timer);
+  postClic.timer = null;
+  postClic.movido = 0;
+}
+
+function estadoAprendizajeLocal() {
+  return {
+    gestos: ratios.length,
+    umbral: umbralPinza(),
+    firmeza,
+    umbrales: umbralesToque(),
+  };
+}
+
+/* Lo que ha aprendido la PC (llega del servidor cuando se le pregunta). */
+let aprendizajeServidor = null;
+
+function pintarAprendizaje(datos) {
+  if (datos) aprendizajeServidor = datos;
+  const caja = $('learning-state');
+  if (!caja) return;
+  const local = estadoAprendizajeLocal();
+  const partes = [];
+  const datosPC = aprendizajeServidor;
+  if (datosPC && datosPC.activo) {
+    const ganancia = Number(datosPC.ganancia || 1).toFixed(2);
+    const app = datosPC.app ? ` en ${datosPC.app}` : '';
+    partes.push(`PC: ganancia ${ganancia}×${app}`);
+    partes.push(`se pasa ${datosPC.excesos || 0} / se queda corto ${datosPC.defectos || 0}`);
+  } else if (datosPC) {
+    partes.push('PC: aprendizaje desactivado');
+  }
+  partes.push(`móvil: umbral ${local.umbral.toFixed(2)} (${local.gestos} gestos)`);
+  partes.push(`firmeza ${local.firmeza.toFixed(2)}`);
+  caja.textContent = partes.join(' · ');
+}
 
 const gesture = {
   pointers: new Map(),
@@ -582,6 +724,7 @@ function onPointerDown(event) {
         joined: ahora - gesture.firstDownAt,   // cuanto tardo el 2.o dedo
         dist,                                   // separacion entre los dedos
         liftAt: 0,                              // cuando se levanto el 1.o
+        sampled: false,                         // si ya se guardo su "firma"
       };
       gesture.pinchAcc = 0;
     } else {
@@ -682,6 +825,7 @@ function onPointerMove(event) {
 
     gesture.acc.x += dx * factor;
     gesture.acc.y += dy * factor;
+    anotarMovimiento(Math.hypot(dx, dy));
     return;
   }
 
@@ -728,11 +872,11 @@ function onPointerMove(event) {
     gesture.twoFinger.stretch += Math.abs(distDelta);
     // Se decide UNA sola vez, en cuanto hay movimiento suficiente:
     // si los dedos se han separado mas de lo que ha avanzado su punto medio,
-    // es una pinza (zoom); si no, es scroll.
+    // es una pinza (zoom); si no, es scroll. El umbral lo afina el aprendizaje.
     const total = gesture.twoFinger.moved + gesture.twoFinger.stretch;
     if (total > SCROLL_SLOP) {
       if (settings.pinchZoom
-          && gesture.twoFinger.stretch > gesture.twoFinger.moved) {
+          && gesture.twoFinger.stretch > gesture.twoFinger.moved * umbralPinza()) {
         gesture.twoFinger.mode = 'pinch';
         toast('Zoom');
       } else {
@@ -744,6 +888,14 @@ function onPointerMove(event) {
           setMode('pointer');
         }
       }
+    }
+    // Se guarda la "firma" del gesto (ya con recorrido de sobra) para que el
+    // umbral se vaya ajustando a como los haces tu.
+    if (!gesture.twoFinger.sampled && total >= 40 && gesture.twoFinger.moved > 1) {
+      gesture.twoFinger.sampled = true;
+      ratios.push(gesture.twoFinger.stretch / gesture.twoFinger.moved);
+      if (ratios.length > MAX_RATIOS) ratios.shift();
+      guardarRatios();
     }
   }
 
@@ -818,16 +970,19 @@ function onPointerUp(event) {
     if (!gesture.twoFinger.liftAt) gesture.twoFinger.liftAt = ahora;
     const juntos = ahora - gesture.twoFinger.liftAt;
     const dosMs = ahora - gesture.twoFinger.start;
+    // Los umbrales los afina el aprendizaje del toque (filtro de accidentes).
+    const u = umbralesToque();
     const intencionado = !wasScroll
       && dosMs < 320
       && gesture.twoFinger.moved <= SCROLL_SLOP
-      && gesture.twoFinger.joined <= TWO_FINGER_JOIN_MS
-      && gesture.twoFinger.dist >= TWO_FINGER_MIN_DIST;
+      && gesture.twoFinger.joined <= u.join
+      && gesture.twoFinger.dist >= u.dist;
     if (remaining === 0) {
       gesture.twoFinger.active = false;
-      if (intencionado && juntos <= TWO_FINGER_LIFT_MS) {
+      if (intencionado && juntos <= u.lift) {
         resetGesture(0);
         send('mouse_click', { button: 'right', clicks: 1 });
+        anotarClicDerecho();
         buzz(14);
         return;
       }
@@ -1173,6 +1328,12 @@ function refreshSettingsUI() {
   $('s-three').checked = settings.threeFinger;
   $('s-edgeback').checked = settings.edgeBack;
   $('s-pinch').checked = settings.pinchZoom;
+  $('s-learn').checked = settings.learnAdaptive;
+  $('s-learntap').checked = settings.learnTap;
+  $('s-learnumbral').checked = settings.learnThreshold;
+  pintarAprendizaje(aprendizajeServidor);
+  // Se pide al servidor que cuente lo que ha aprendido de ti.
+  send('learning', {});
   $('about').textContent =
     `Pantalla: ${state.screen.w}×${state.screen.h} px · latencia ${state.latency} ms`
     + (appVersion() ? ` · versión ${appVersion()}` : ' · versión desconocida');
@@ -1477,6 +1638,22 @@ function bindUI() {
   bindSwitch('s-three', 'threeFinger');
   bindSwitch('s-edgeback', 'edgeBack');
   bindSwitch('s-pinch', 'pinchZoom');
+  bindSwitch('s-learn', 'learnAdaptive');
+  bindSwitch('s-learntap', 'learnTap');
+  bindSwitch('s-learnumbral', 'learnThreshold');
+
+  const sLearn = $('s-learn');
+  if (sLearn) {
+    sLearn.addEventListener('change', () => send('learning', { on: sLearn.checked }));
+  }
+  const btnLearnReset = $('btn-learning-reset');
+  if (btnLearnReset) {
+    btnLearnReset.addEventListener('click', () => {
+      send('learning', { reset: true });
+      reiniciarAprendizajeLocal();
+      toast('Lo aprendido se ha reiniciado');
+    });
+  }
 
   $('btn-fullscreen').addEventListener('click', async () => {
     try {

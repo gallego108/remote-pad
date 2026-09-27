@@ -2,9 +2,9 @@
 
 Convierte tu celular Android en un **touchpad inalámbrico** para tu PC con
 Windows: mueve el puntero, haz clic, arrastra, escribe (o **dicta**), controla
-el volumen, comparte el **portapapeles**, señala con un **puntero láser** y
-hasta evita que la pantalla se apague. Todo desde el navegador del teléfono y
-por tu propia red WiFi.
+el volumen, comparte el **portapapeles**, señala con un **puntero láser**,
+evita que la pantalla se apague y **aprende de tu forma de moverte**. Todo desde
+el navegador del teléfono y por tu propia red WiFi.
 
 No hay que instalar nada en el celular: el servidor de la PC sirve la
 aplicación web, y el teléfono solo tiene que abrir una dirección.
@@ -312,6 +312,23 @@ Detalles que marcan la diferencia:
   para que pulsar un botón pequeño sea fiable.
 - El **scroll** se consolida en "clics" de rueda, con la parte fraccionaria
   guardada para que un deslizamiento lento también responda.
+
+### Aprendizaje (sin dependencias ni nube)
+
+La app se adapta sola a cómo usas el puntero, con unas pocas medias
+exponenciales: **nada sale de tu PC** y no hace falta ningún modelo grande.
+
+| Qué aprende | Cómo | Dónde |
+|---|---|---|
+| **Sensibilidad** | Si te pasas y corriges (movimiento largo + uno corto al revés) baja la ganancia; si encadenas movimientos largos en el mismo sentido, la sube | PC (`server/learning.py`) |
+| **Por aplicación** | La misma ganancia, aprendida por separado para cada programa en primer plano | PC |
+| **Toque con dos dedos** | Si un clic derecho va seguido de un movimiento, salió solo: se exige más la próxima vez | Celular |
+| **Umbral pinza/scroll** | Guarda la "firma" de tus gestos y coloca el umbral entre los dos grupos (k-means 1D) | Celular |
+
+La ganancia se mueve entre 0,6× y 1,9×, despacio y acotada: mejor quedarse corto
+que dar un salto raro a mitad de un movimiento. **Tu ajuste manual siempre
+manda**: la ganancia multiplica lo que elijas, no lo sustituye. Todo se puede
+apagar y reiniciar desde *Ajustes → Aprendizaje*.
 
 ---
 

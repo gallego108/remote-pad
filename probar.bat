@@ -15,6 +15,8 @@ set REMOTEPAD_TOKENS=%TEMP%\remotepad_tokens_test.json
 del "%REMOTEPAD_TOKENS%" >nul 2>nul
 set REMOTEPAD_PROFILES=%TEMP%\remotepad_profiles_test.json
 del "%REMOTEPAD_PROFILES%" >nul 2>nul
+set REMOTEPAD_LEARNING=%TEMP%\remotepad_learning_test.json
+del "%REMOTEPAD_LEARNING%" >nul 2>nul
 
 echo.
 echo  ============================================================
@@ -79,6 +81,8 @@ if errorlevel 1 set RESULT=1
 python tools\test_version_cache.py %PORT%
 if errorlevel 1 set RESULT=1
 python tools\test_acceso_libre.py
+if errorlevel 1 set RESULT=1
+python tools\test_aprendizaje.py
 if errorlevel 1 set RESULT=1
 
 REM Paramos el servidor de pruebas.

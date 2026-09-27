@@ -53,6 +53,7 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit(1)
 
 import qr
+import learning
 
 # --------------------------------------------------------------------- ajustes
 WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
@@ -90,7 +91,7 @@ QR_PRE_REFRESH_SECONDS = 20.0   # antelacion con que el panel pide el siguiente
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.6.5"
+APP_VERSION = "1.7.0"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
@@ -466,6 +467,11 @@ class Gateway:
         # Anti-apagado: momento (monotonic) en que termina, y ultimo movimiento.
         self.keep_awake_until: Optional[float] = None
         self.keep_awake_last = 0.0
+        # Aprendizaje del tacto: se adapta a como mueves el puntero, por app.
+        self.learning = learning.AprendizTacto()
+        self._app = ""
+        self._app_check = 0.0
+        self._learn_saved = 0.0
 
         self.executor = ThreadPoolExecutor(
             max_workers=3, thread_name_prefix="input"
@@ -748,6 +754,28 @@ class Gateway:
         except Exception:
             log.debug("jiggle fallo", exc_info=True)
 
+    def aprender_tick(self) -> None:
+        """
+        Mantiene al dia el aprendizaje del tacto.
+
+        Mira cada ~1,5 s que aplicacion tienes delante (para los perfiles por
+        aplicacion) y guarda lo aprendido de vez en cuando, para no escribir en
+        disco en cada movimiento.
+        """
+        ahora = time.monotonic()
+        if ahora - self._app_check >= 1.5:
+            self._app_check = ahora
+            try:
+                app_actual = self.controller.foreground_app()
+            except Exception:
+                app_actual = ""
+            if app_actual != self._app:
+                self._app = app_actual
+                self.learning.ubicar(app_actual)
+        if ahora - self._learn_saved >= 60.0:
+            self._learn_saved = ahora
+            self.learning.guardar()
+
     def _discard_stale(self) -> None:
         """
         Cuando ya no queda ningun celular conectado soltamos botones y teclas
@@ -823,6 +851,7 @@ class Gateway:
         while True:
             self.keep_pin_fresh()
             self.keep_awake_tick()
+            self.aprender_tick()
 
             # Si la clave del QR cambio, se vuelve a dibujar en la consola:
             # asi el codigo que hay en pantalla nunca esta caducado. Se omite
@@ -844,12 +873,20 @@ class Gateway:
                 pass
 
             if dx or dy:
+                # Aprendizaje del tacto: multiplica el movimiento por la
+                # ganancia aprendida (1,0 si esta desactivado o aun no sabe).
+                ganancia = self.learning.ganancia()
+                aplicado_x = dx * ganancia
+                aplicado_y = dy * ganancia
                 try:
                     await loop.run_in_executor(
-                        self.executor, self.controller.mouse_move, dx, dy
+                        self.executor, self.controller.mouse_move,
+                        aplicado_x, aplicado_y,
                     )
                 except Exception:
                     log.debug("mouse_move fallo", exc_info=True)
+                # Se aprende de lo que de verdad ha pasado en pantalla.
+                self.learning.alimentar(aplicado_x, aplicado_y)
 
             while True:
                 try:
@@ -1038,6 +1075,16 @@ class Gateway:
             self._profiles[client.token] = limpio
             save_profiles(self._profiles)
             return {"ok": True}
+
+        if action == "learning":
+            # Aprendizaje del tacto: consultar, encender/apagar o reiniciar.
+            if "on" in data:
+                self.learning.activar(bool(data.get("on")))
+                self.learning.guardar()
+            if data.get("reset"):
+                self.learning.reiniciar()
+                log.info("Aprendizaje del tacto reiniciado")
+            return {"ok": True, **self.learning.estado()}
 
         if action == "key_type":
             text = str(data.get("text", ""))
@@ -1323,6 +1370,7 @@ class Gateway:
     # ------------------------------------------------------------------ cierre
     async def shutdown(self) -> None:
         self.laser.stop()
+        self.learning.guardar()
         self.controller.release_all()
         for client in list(self.clients):
             await self.stop_sender(client)

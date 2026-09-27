@@ -94,13 +94,15 @@ bloquea al celular.
 | `test_qr_rotacion.py` | Rotación del QR, margen de gracia, un solo uso y recuperación con token |
 | `test_acceso_libre.py` | El código de acceso desactivable: arranque con `--no-auth`, cambio en caliente desde el celular y desde la consola, permisos y persistencia |
 | `test_version_cache.py` | Anti-caché: versión inyectada en el HTML, `no-store`, coherencia entre HTML y servidor, y service worker "red primero" |
+| `test_aprendizaje.py` | Aprendizaje del tacto, con movimientos simulados: que baje la ganancia al pasarse, que suba al quedarse corto, que se quede neutro con uso equilibrado, los perfiles por aplicación y el guardado en disco |
 
 ### Aislamiento de los archivos de estado
 
-`probar.bat` define `REMOTEPAD_TOKENS` y `REMOTEPAD_PROFILES` apuntando a
-`%TEMP%`, así que las pruebas **no escriben** en `server/tokens.json` ni en
-`server/profiles.json` del usuario. Si lanzas una prueba a mano sin esas
-variables, sí usará los archivos reales (inofensivo, pero ensucia).
+`probar.bat` define `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES` y
+`REMOTEPAD_LEARNING` apuntando a `%TEMP%`, así que las pruebas **no escriben**
+en `server/tokens.json`, `server/profiles.json` ni `server/learning.json` del
+usuario. Si lanzas una prueba a mano sin esas variables, sí usará los archivos
+reales (inofensivo, pero ensucia).
 
 ## Notas para tocar el código
 

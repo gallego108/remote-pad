@@ -1,5 +1,33 @@
 # Historial de cambios
 
+## 1.7.0
+
+Aprendizaje: la app se adapta a como usas el puntero.
+
+### Añadido
+
+- **Sensibilidad adaptativa.** El servidor mira el flujo de movimientos y
+  reconoce dos cosas: cuando **te pasas y corriges** (un movimiento largo
+  seguido de uno corto en sentido contrario) y cuando **te quedas corto**
+  (movimientos largos encadenados en el mismo sentido). Con el equilibrio entre
+  las dos calcula una **ganancia** (0,6× a 1,9×) que aplica al puntero. Es lenta
+  y acotada a propósito: mejor quedarse corto que dar un salto raro a mitad de un
+  movimiento. El ajuste manual siempre manda: la ganancia multiplica lo que
+  elijas, no lo sustituye.
+- **Perfiles por aplicación.** La ganancia se aprende **por separado para cada
+  programa** (navegador, juego, editor…), detectando cuál tienes en primer plano.
+- **Umbral pinza/scroll aprendido.** El celular guarda la "firma" de cada gesto
+  de dos dedos —cuánto se separan frente a cuánto avanza su punto medio— y sitúa
+  el umbral entre los dos grupos con un k-means de una dimensión.
+- **Filtro de toques accidentales.** Si un clic derecho va seguido de un
+  movimiento del puntero, se entiende que ha salido solo y se exige más para el
+  siguiente; si no mueves nada, se relaja poco a poco.
+- En *Ajustes* hay un bloque **Aprendizaje** con lo aprendido, un interruptor por
+  cada mecanismo y un botón para **reiniciarlo todo**.
+
+Todo es local: medias exponenciales y contadores, **sin dependencias nuevas** y
+sin que salga nada de tu PC.
+
 ## 1.6.5
 
 ### Arreglado

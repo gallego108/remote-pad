@@ -14,6 +14,7 @@ Todo pasa por SendInput con:
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from ctypes import wintypes
 from typing import Optional
@@ -182,6 +183,26 @@ def _configure() -> None:
     _user32.SetClipboardData.argtypes = (ctypes.c_uint, wintypes.HANDLE)
     _user32.SetClipboardData.restype = wintypes.HANDLE
 
+    # Aplicacion en primer plano (para los perfiles por aplicacion).
+    _user32.GetForegroundWindow.argtypes = ()
+    _user32.GetForegroundWindow.restype = wintypes.HWND
+    _user32.GetWindowThreadProcessId.argtypes = (
+        wintypes.HWND, ctypes.POINTER(wintypes.DWORD)
+    )
+    _user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+
+    _kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _kernel32.CloseHandle.restype = wintypes.BOOL
+    _kernel32.QueryFullProcessImageNameW.argtypes = (
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    _kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+
 
 _configure()
 
@@ -213,6 +234,44 @@ def set_cursor_position(x: int, y: int) -> bool:
     if not available():
         return False
     return bool(_user32.SetCursorPos(int(x), int(y)))
+
+
+def foreground_app() -> str:
+    """
+    Nombre del ejecutable en primer plano (sin ruta ni extension).
+
+    Se usa para los perfiles por aplicacion: "chrome", "firefox", "winword"...
+    Devuelve "" si no se puede saber. Conviene no llamarlo en bucle: cambia
+    poco y cada llamada abre un proceso del sistema.
+    """
+    if not available():
+        return ""
+    try:
+        hwnd = _user32.GetForegroundWindow()
+        if not hwnd:
+            return ""
+        pid = wintypes.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if not pid.value:
+            return ""
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = _kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value
+        )
+        if not handle:
+            return ""
+        try:
+            buffer = ctypes.create_unicode_buffer(512)
+            tamano = wintypes.DWORD(len(buffer))
+            if not _kernel32.QueryFullProcessImageNameW(
+                handle, 0, buffer, ctypes.byref(tamano)
+            ):
+                return ""
+            return os.path.splitext(os.path.basename(buffer.value))[0]
+        finally:
+            _kernel32.CloseHandle(handle)
+    except Exception:
+        return ""
 
 
 def left_button_is_down() -> bool:

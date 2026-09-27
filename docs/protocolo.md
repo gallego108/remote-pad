@@ -63,6 +63,7 @@ token ni el PIN, y `auth_query` responde `required: false`.
 |---|---|---|
 | `keep_awake` | `{ minutes }` | Anti-apagado: mueve el ratón 1 px cada 40 s (sin desplazarlo) durante `minutes`; `on: false` lo detiene |
 | `save_settings` | `{ settings }` | Guarda las preferencias del dispositivo en la PC (`server/profiles.json`). Se devuelven en el mensaje `ok` del siguiente acceso |
+| `learning` | `{ on?, reset? }` | Aprendizaje del tacto: sin datos consulta el estado; `on` lo enciende/apaga; `reset` lo reinicia. Devuelve la ganancia aprendida y el estado |
 
 ### Teclado
 

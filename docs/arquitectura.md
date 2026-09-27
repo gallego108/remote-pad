@@ -81,6 +81,7 @@ para que un deslizamiento lento también acabe moviendo la página.
 | `server/native_input.py` | Única dependencia del sistema operativo: `SendInput`, `SetCursorPos`, `GetAsyncKeyState` |
 | `server/qr.py` | Codificador de QR completo (rejilla, Reed-Solomon, máscaras) y dibujo en consola |
 | `server/laser.py` | Proceso aparte que dibuja el puntero láser: ventana `tkinter` transparente y "click-through" |
+| `server/learning.py` | Aprendizaje del tacto: deduce la ganancia del puntero a partir de cómo corriges, por aplicación |
 | `web/app.js` | Motor de gestos y comunicación del cliente |
 | `web/qr.html` | Panel local de la PC con el QR en grande |
 
@@ -93,9 +94,32 @@ Todo vive en la carpeta `server/` y **no se versiona** (ver `.gitignore`):
 | `config.json` | Si se pide código de acceso | Que `quitar-codigo.bat` sobreviva al reinicio |
 | `tokens.json` | Accesos de los dispositivos autorizados | Que reiniciar el servidor no obligue a escribir el PIN otra vez |
 | `profiles.json` | Preferencias de cada dispositivo (por token) | Que no haya que reajustar velocidad, gestos, etc. |
+| `learning.json` | Ganancia aprendida por aplicación | Que la adaptación sobreviva al reinicio |
 
-Las pruebas **no tocan** esos archivos: `probar.bat` redirige los dos últimos con
-`REMOTEPAD_TOKENS` y `REMOTEPAD_PROFILES` a archivos temporales.
+Las pruebas **no tocan** esos archivos: `probar.bat` redirige los tres últimos
+con `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES` y `REMOTEPAD_LEARNING` a archivos
+temporales.
+
+### Cómo aprende la ganancia
+
+`learning.py` parte el movimiento en **rafagas** (una rafaga termina tras 120 ms
+sin moverse) y compara cada una con la anterior:
+
+| Patrón | Lectura | Efecto |
+|---|---|---|
+| Rafaga larga + rafaga corta en sentido contrario | se pasó y corrigió | cuenta como **exceso** |
+| Rafagas largas encadenadas en el mismo sentido | se quedó corto | cuenta como **defecto** |
+
+Las dos cuentas se desvanecen un 3 % por rafaga (media exponencial), así que
+manda lo reciente, y de su desequilibrio sale la ganancia:
+
+```
+equilibrio = (defectos - excesos) / (defectos + excesos)     # -1 .. +1
+ganancia   = 1 + equilibrio * 0.9                            # 0,6 .. 1,9
+```
+
+Con menos de 6 rafagas evaluadas la ganancia es 1,0: preferimos no tocar nada
+hasta tener datos.
 
 ## Estados del controlador
 

@@ -46,6 +46,9 @@ server/tokens.json
 # Preferencias de cada dispositivo (perfil del usuario).
 server/profiles.json
 
+# Lo que la PC ha aprendido de tu forma de usar el puntero.
+server/learning.json
+
 # Secretos y configuracion local (no deberia haber, pero por si acaso)
 *.local
 .env

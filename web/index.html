@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.6.5">
+<link rel="stylesheet" href="styles.css?v=1.7.0">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.6.5';
+const REMOTEPAD_WEB = '1.7.0';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -308,6 +308,25 @@ const REMOTEPAD_WEB = '1.6.5';
       <span>Pinza de 2 dedos = zoom</span>
       <input id="s-pinch" type="checkbox" checked>
     </label>
+
+    <h3 class="bloque">Aprendizaje</h3>
+    <label class="setting switch">
+      <span>La PC aprende tu sensibilidad</span>
+      <input id="s-learn" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Afinar el toque con dos dedos</span>
+      <input id="s-learntap" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Aprender el umbral de pinza/scroll</span>
+      <input id="s-learnumbral" type="checkbox" checked>
+    </label>
+    <p class="tiny" id="learning-state">Sin datos todavía.</p>
+    <div class="sheet-actions">
+      <button class="key" id="btn-learning-reset">🧠 Reiniciar lo aprendido</button>
+    </div>
+
     <div class="sheet-actions">
       <button class="key" id="btn-awake">💡 Mantener la pantalla encendida</button>
       <button class="key" id="btn-fullscreen">Pantalla completa</button>
@@ -388,6 +407,16 @@ const REMOTEPAD_WEB = '1.6.5';
     gestos, vibración…) se guarda <b>en la PC</b>, ligado a tu dispositivo: al
     volver a entrar se aplica solo, aunque borres los datos del navegador.</p>
 
+    <h3>Aprendizaje</h3>
+    <p>La app se adapta sola a como usas el puntero:</p>
+    <p>· La <b>PC</b> mira si te pasas al apuntar (y corriges) o si te quedas
+    corto, y ajusta la sensibilidad. Lo aprende <b>por aplicación</b>: en el
+    navegador puede ir fina y en un juego rápida.<br>
+    · El <b>móvil</b> afina el toque con dos dedos (para que no salga un clic
+    derecho sin querer) y el umbral que separa el scroll de la pinza.</p>
+    <p>En <b>Ajustes → Aprendizaje</b> ves lo que ha aprendido, puedes apagar
+    cada parte y reiniciarlo todo. <b>Tu ajuste manual siempre manda.</b></p>
+
     <h3>Mantener la pantalla encendida</h3>
     <p>En <b>Ajustes → 💡 Mantener la pantalla encendida</b> eliges cuánto
     tiempo quieres que la PC no apague la pantalla ni se suspenda. La app mueve
@@ -444,7 +473,7 @@ const REMOTEPAD_WEB = '1.6.5';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.6.5"></script>
+<script src="app.js?v=1.7.0"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero
