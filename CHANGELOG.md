@@ -1,5 +1,89 @@
 # Historial de cambios
 
+## 1.6.3
+
+### Cambiado
+
+- **El Enter del teclado del celular ahora hace un salto de línea** en el campo
+  de texto, en lugar de pulsar Enter en la PC directamente. Así se pueden
+  escribir varias líneas (y cada salto llega a la PC como una línea nueva, que
+  allí es justo un Enter). Para pulsar un Enter **suelto** en la PC —enviar un
+  mensaje, confirmar un diálogo— está el botón **⏎ Enter en la PC**.
+
+## 1.6.2
+
+### Arreglado
+
+- **El scroll con dos dedos era prácticamente imperceptible.** El cliente
+  enviaba la distancia del dedo multiplicada por 0,02 y el servidor convierte a
+  "clics" de rueda cada 22 unidades: hacían falta **1.100 píxeles de dedo para
+  un solo clic**. Ahora el factor es 0,45 (una pasada de dedo mueve varias
+  líneas) y se afina con *Ajustes → velocidad del scroll*.
+
+### Añadido
+
+- **Perfil del usuario**: las preferencias (velocidad, scroll, gestos,
+  vibración…) se guardan también en la PC, en `server/profiles.json`, ligadas al
+  dispositivo. Se aplican solas al entrar, así que no hay que reajustarlas
+  aunque el navegador borre sus datos.
+
+## 1.6.1
+
+### Arreglado
+
+- **El acceso ya no se pierde al reiniciar.** Los tokens de los dispositivos
+  autorizados se guardan en `server/tokens.json`, así que reiniciar el servidor
+  (o reiniciar la PC) **ya no obliga a volver a escribir el PIN**: el celular
+  entra solo, hasta que caduque el acceso (30 días).
+- **El scroll con dos dedos no funcionaba.** Al reescribir los gestos, el envío
+  acumulado (`pump`) seguía consultando una variable antigua (`scrollMode`) que
+  ya nadie activaba, así que el gesto de dos dedos acababa **moviendo el
+  puntero** en lugar de hacer scroll. Ahora mira el modo real del gesto.
+- La **pinza (zoom)** solo entra si los dedos se separan/juntan más de lo que se
+  desplazan en conjunto, para que un scroll normal no se confunda con un zoom.
+
+## 1.6.0
+
+Touchpad completo: más gestos, modo rápido, láser y portapapeles compartido.
+
+### Arreglado
+
+- **El puntero no se movía.** El celular enviaba desplazamientos normalizados
+  por la altura de la pantalla (valores de ~0,1) y el servidor los aplicaba como
+  píxeles: al redondear, el puntero nunca se movía. Ahora el celular manda la
+  distancia real recorrida por el dedo.
+- **La pantalla de acceso no desaparecía.** La regla `.overlay { display: grid }`
+  anulaba el atributo `hidden`, así que el PIN se quedaba tapando el touchpad
+  aunque ya hubieras entrado. Se añadió `[hidden] { display: none !important }`.
+- La app **nunca se quedaba con un `app.js` viejo**: `app.js` y `styles.css` se
+  piden con versión (`?v=`) y se sirven sin caché.
+- El servidor **acepta reautenticaciones** de un dispositivo ya autorizado en
+  lugar de responder «acción desconocida: auth».
+
+### Añadido
+
+- **Modo rápido (⚡)**: botón en la barra superior; el puntero va 3× más rápido.
+- **Inercia**: tras un deslizamiento rápido el puntero sigue un poco, frenándose.
+- **Pellizcar con 2 dedos = zoom** (Ctrl + rueda).
+- **3 dedos**: arriba/abajo = volumen; izquierda/derecha = pestaña anterior /
+  siguiente.
+- **Bordes**: deslizar desde el borde izquierdo = Atrás; desde el derecho =
+  Adelante.
+- **Portapapeles compartido**: traer a la app el texto copiado en la PC y dejar
+  en la PC el texto escrito en la app.
+- **Puntero láser (🔴)** para presentaciones: un punto rojo sobre la pantalla.
+- **Anti-apagado (💡)**: mantiene la pantalla encendida el tiempo que elijas
+  (5 min a 4 h). Mueve el ratón 1 píxel cada 40 s sin desplazarlo y avisa a
+  Windows con `SetThreadExecutionState`.
+- **Dictado por voz (🎤)**: escribe en la PC hablando. Usa el micrófono del
+  teclado del celular (Gboard) y, si la página se sirve por HTTPS, el
+  reconocimiento de voz del propio navegador.
+- **Tutorial paso a paso**: aparece la primera vez que entras y puede repetirse
+  desde la guía.
+- **Guía de uso dentro de la app** (panel *Ayuda*): gestos, paneles, consejos y
+  solución de problemas.
+- Nuevos interruptores en *Ajustes* para inercia, 3 dedos, bordes y pinza.
+
 ## 1.5.0
 
 El código de acceso se puede quitar y volver a poner.

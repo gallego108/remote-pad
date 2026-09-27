@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=1.6.3">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.5.0';
+const REMOTEPAD_WEB = '1.6.3';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -101,14 +101,17 @@ const REMOTEPAD_WEB = '1.5.0';
       PIN <b id="pin-chip">······</b>
     </button>
     <button id="mode-btn" class="chip" title="Modo del touchpad">Puntero</button>
+    <button id="fast-btn" class="chip" title="Modo rápido: el puntero va 3×">⚡ 1×</button>
+    <button id="laser-btn" class="chip" title="Puntero láser para señalar">🔴</button>
   </header>
 
   <section id="pad" class="pad" aria-label="Superficie táctil">
     <div id="pad-hint" class="pad-hint">
       <b>Desliza</b> para mover el puntero<br>
-      <b>Toca</b> = clic izquierdo · <b>2 dedos</b> = scroll<br>
-      <b>2 dedos tocando</b> = clic derecho · <b>3 dedos</b> = botón central<br>
-      <b>Mantén pulsado</b> o <b>doble toque y desliza</b> = arrastrar
+      <b>Toca</b> = clic izq. · <b>2 dedos</b> = scroll · <b>pinza</b> = zoom<br>
+      <b>2 dedos tocando</b> = clic der. · <b>3 dedos</b> = botón central<br>
+      <b>3 dedos ↑↓</b> = volumen · <b>3 dedos ←→</b> = pestañas<br>
+      <b>Borde ←/→</b> = Atrás/Adelante · <b>mantén pulsado</b> = arrastrar
     </div>
     <div id="cursor" class="cursor"></div>
     <div id="drag-ring" class="drag-ring" hidden></div>
@@ -139,6 +142,7 @@ const REMOTEPAD_WEB = '1.5.0';
     <button class="tool" data-panel="media"><span>🎵</span>Multimedia</button>
     <button class="tool" data-panel="presentation"><span>📊</span>Presentar</button>
     <button class="tool" data-panel="settings"><span>⚙️</span>Ajustes</button>
+    <button class="tool" data-panel="help"><span>❓</span>Ayuda</button>
   </nav>
 </main>
 
@@ -151,8 +155,14 @@ const REMOTEPAD_WEB = '1.5.0';
     <textarea id="kb-text" rows="3" placeholder="Escribe aquí y aparecerá en la PC…"
               autocomplete="off" autocorrect="off" autocapitalize="sentences" spellcheck="false"></textarea>
     <div class="keys">
+      <button class="key" id="kb-dict">🎤 Dictar</button>
+      <button class="key" id="kb-get">⬇ Traer del PC</button>
+      <button class="key" id="kb-send">⬆ Copiar en el PC</button>
+    </div>
+    <p class="tiny" id="dict-hint" hidden></p>
+    <div class="keys">
       <button class="key" data-key="backspace">⌫ Borrar</button>
-      <button class="key" data-key="enter">⏎ Enter</button>
+      <button class="key" data-key="enter">⏎ Enter en la PC</button>
       <button class="key" data-key="tab">⇥ Tab</button>
       <button class="key" data-key="esc">Esc</button>
       <button class="key" data-key="up">↑</button>
@@ -166,7 +176,10 @@ const REMOTEPAD_WEB = '1.5.0';
       <button class="key" data-key="page_down">AvPág</button>
       <button class="key" data-key="space">Espacio</button>
     </div>
-    <p class="tiny">El texto se envía tal cual, respetando acentos y símbolos.</p>
+    <p class="tiny">El texto se envía tal cual, respetando acentos y símbolos.
+    El <b>Enter</b> de tu teclado hace un <b>salto de línea</b> (puedes escribir
+    varias líneas); para pulsar Enter en la PC sin escribir nada, usa el botón
+    <b>⏎ Enter en la PC</b>.</p>
   </div>
 </section>
 
@@ -279,7 +292,24 @@ const REMOTEPAD_WEB = '1.5.0';
       <span>Zona extra sensible en los bordes</span>
       <input id="s-edges" type="checkbox" checked>
     </label>
+    <label class="setting switch">
+      <span>Inercia (el puntero sigue al soltar)</span>
+      <input id="s-inertia" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>3 dedos: volumen y cambiar pestaña</span>
+      <input id="s-three" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Bordes: Atrás / Adelante</span>
+      <input id="s-edgeback" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
+      <span>Pinza de 2 dedos = zoom</span>
+      <input id="s-pinch" type="checkbox" checked>
+    </label>
     <div class="sheet-actions">
+      <button class="key" id="btn-awake">💡 Mantener la pantalla encendida</button>
       <button class="key" id="btn-fullscreen">Pantalla completa</button>
       <button class="key" id="btn-authmode">Quitar el código de acceso</button>
       <button class="key" id="btn-stop">Detener RemotePad en la PC</button>
@@ -290,8 +320,152 @@ const REMOTEPAD_WEB = '1.5.0';
   </div>
 </section>
 
+<!-- ============================ AYUDA ============================ -->
+<section class="sheet" id="sheet-help" hidden>
+  <header><h2>Ayuda y guía de uso</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body help">
+    <div class="sheet-actions">
+      <button class="key primary" id="btn-tutorial">▶ Ver el tutorial paso a paso</button>
+    </div>
+
+    <h3>Conectar el celular</h3>
+    <p>Conecta el móvil a la <b>misma WiFi</b> que la PC. Abre la dirección que
+    muestra la consola de la PC o <b>escanea el código QR</b> y entrarás sin
+    escribir nada. Si no usas el QR, escribe el <b>PIN de 6 dígitos</b> que
+    aparece en la PC (cambia cada 5 minutos).</p>
+    <p class="tiny">El código QR entra <b>sin escribir el PIN</b>. Y el acceso se
+    recuerda en el celular: las próximas veces entras solo, incluso si se
+    reinicia la PC (el acceso dura 30 días).</p>
+
+    <h3>Mover el puntero</h3>
+    <p><b>Desliza un dedo</b> por el panel. Con el botón <b>⚡</b> de la barra
+    superior el puntero va <b>3× más rápido</b>. La velocidad fina se ajusta en
+    <b>Ajustes</b>.</p>
+
+    <h3>Clics</h3>
+    <p><b>Tocar</b> = clic izquierdo · <b>2 dedos</b> = clic derecho ·
+    <b>3 dedos</b> = clic central (abrir en pestaña nueva). Los botones
+    <b>Clic izq. / Clic der. / Soltar</b> están siempre a la vista.</p>
+
+    <h3>Scroll y zoom</h3>
+    <p><b>Desliza con 2 dedos</b> = scroll vertical y horizontal.
+    <b>Pellizca con 2 dedos</b> = zoom (Ctrl + rueda).</p>
+
+    <h3>Arrastrar (seleccionar, mover archivos…)</h3>
+    <p><b>Mantén pulsado</b> 0,4 s y desliza sin levantar el dedo; o
+    <b>toca dos veces y desliza</b> para el arrastre fijo, hasta que toques otra
+    vez. Si algo se queda pegado, pulsa <b>Soltar</b>.</p>
+
+    <h3>Teclado y dictado</h3>
+    <p>Abre <b>Teclado</b> y escribe: el texto aparece en la PC tal cual
+    (acentos, @, ¿, emoji). El <b>Enter</b> de tu teclado hace un <b>salto de
+    línea</b> en el texto; para pulsar un Enter suelto en la PC (enviar un
+    mensaje, confirmar…) usa el botón <b>⏎ Enter en la PC</b>. Para <b>dictar</b>
+    toca <b>🎤 Dictar</b> y usa el <b>micrófono del teclado del celular</b>: lo
+    que digas se escribe en la PC.</p>
+
+    <h3>Portapapeles compartido</h3>
+    <p><b>⬇ Traer del PC</b> copia al campo lo que tengas copiado en la PC.
+    <b>⬆ Copiar en el PC</b> deja el texto del campo en el portapapeles de la PC
+    (pégalo allí con Ctrl+V).</p>
+
+    <h3>Volumen y pestañas</h3>
+    <p>Con <b>3 dedos</b>: desliza <b>arriba/abajo</b> para el volumen y
+    <b>izquierda/derecha</b> para cambiar de pestaña.</p>
+
+    <h3>Atrás / Adelante</h3>
+    <p>Desliza desde el <b>borde izquierdo</b> hacia dentro = Atrás; desde el
+    <b>borde derecho</b> hacia dentro = Adelante.</p>
+
+    <h3>Presentaciones y láser</h3>
+    <p>En <b>Presentar</b> tienes anterior/siguiente, iniciar (F5) y pantalla en
+    negro o blanco. El botón <b>🔴</b> de la barra superior activa el
+    <b>puntero láser</b>: tocar el panel solo señala con un punto rojo, sin
+    mover el ratón ni hacer clic.</p>
+
+    <h3>Ajustes y perfil</h3>
+    <p>Lo que cambies en <b>Ajustes</b> (velocidad del puntero y del scroll,
+    gestos, vibración…) se guarda <b>en la PC</b>, ligado a tu dispositivo: al
+    volver a entrar se aplica solo, aunque borres los datos del navegador.</p>
+
+    <h3>Mantener la pantalla encendida</h3>
+    <p>En <b>Ajustes → 💡 Mantener la pantalla encendida</b> eliges cuánto
+    tiempo quieres que la PC no apague la pantalla ni se suspenda. La app mueve
+    el ratón 1 píxel cada 40 segundos (sin que se note y sin desplazarlo).</p>
+
+    <h3>Si algo no funciona</h3>
+    <p><b>El celular no conecta:</b> casi siempre es el Firewall de Windows;
+    ejecuta <code>abrir-firewall.bat</code> en la PC y marca la red WiFi como
+    <i>Privada</i>. Comprueba que ambos estén en la misma red.</p>
+    <p><b>«PIN incorrecto»:</b> el PIN cambia cada 5 minutos; mira el actual en
+    la consola de la PC o pulsa el botón <b>PIN</b> de la barra superior.</p>
+    <p><b>El puntero no se mueve o algo va raro:</b> pulsa <b>Reconectar</b>.</p>
+    <p class="tiny" id="help-about"></p>
+  </div>
+</section>
+
+<!-- ============================ TUTORIAL ============================ -->
+<div id="tutorial" class="overlay tutorial" hidden>
+  <div class="card tut">
+    <div class="tut-icon" id="tut-icon">👋</div>
+    <div class="tut-step" id="tut-step">Paso 1 de 9</div>
+    <h2 id="tut-title">Bienvenido</h2>
+    <p id="tut-body"></p>
+    <div class="tut-actions">
+      <button class="key" id="tut-skip">Saltar</button>
+      <button class="key" id="tut-prev">◀ Anterior</button>
+      <button class="key primary" id="tut-next">Siguiente ▶</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= ANTI-APAGADO ======================= -->
+<div id="awake" class="overlay" hidden>
+  <div class="card">
+    <h2>💡 Mantener la pantalla encendida</h2>
+    <p class="tiny">Mueve el ratón 1 píxel cada 40 segundos (sin que se note) para
+    que la PC no apague la pantalla ni se suspenda. Elige cuánto tiempo quieres
+    que funcione.</p>
+    <div class="grid">
+      <button class="key" data-awake="5">5 minutos</button>
+      <button class="key" data-awake="15">15 minutos</button>
+      <button class="key" data-awake="30">30 minutos</button>
+      <button class="key" data-awake="60">1 hora</button>
+      <button class="key" data-awake="120">2 horas</button>
+      <button class="key" data-awake="240">4 horas</button>
+    </div>
+    <div class="sheet-actions">
+      <button class="key" id="awake-stop">⏹ Detener</button>
+      <button class="key" id="awake-close">Cerrar</button>
+    </div>
+    <p class="tiny" id="awake-state"></p>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=1.6.3"></script>
+<script>
+/* Compatibilidad con copias antiguas de la app -------------------------
+   Una version vieja de app.js muestra el panel de control (id="app") pero
+   NO oculta la pantalla de acceso (id="auth"): en el celular se queda
+   viendo el PIN aunque ya esta dentro, y el touchpad parece no responder.
+   Este HTML se sirve SIEMPRE sin cache, asi que aqui se corrige solo, sin
+   depender de que el celular llegue a descargar el JavaScript nuevo. */
+(function () {
+  function ajustar() {
+    var app = document.getElementById('app');
+    var auth = document.getElementById('auth');
+    if (app && auth && !app.hidden && !auth.hidden) auth.hidden = true;
+  }
+  var app = document.getElementById('app');
+  if (app && window.MutationObserver) {
+    new MutationObserver(ajustar).observe(
+      app, { attributes: true, attributeFilter: ['hidden'] }
+    );
+  }
+  ajustar();
+})();
+</script>
 </body>
 </html>

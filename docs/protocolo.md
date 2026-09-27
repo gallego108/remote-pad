@@ -47,6 +47,22 @@ token ni el PIN, y `auth_query` responde `required: false`.
 | `mouse_drag_start` | `{ x, y }` | Coloca el puntero y presiona (arrastre iniciado con el botón de la app) |
 | `mouse_release_all` | — | Suelta botones y modificadores (botón **Soltar**) |
 | `mouse_scroll` | `{ dx, dy }` | Unidades de deslizamiento; se convierten a rueda |
+| `zoom` | `{ steps }` | Ctrl + rueda (pinza de 2 dedos). `steps > 0` acerca |
+| `laser` | `{ on, x, y }` | Puntero láser. `x`, `y` normalizados (0..1); `on: false` lo apaga |
+
+### Portapapeles
+
+| Acción | Datos | Notas |
+|---|---|---|
+| `clipboard_get` | — | Devuelve `{ ok, text }` con el texto copiado en la PC |
+| `clipboard_set` | `{ text }` | Deja `text` en el portapapeles de la PC (máx. 100 000 caracteres) |
+
+### Sistema
+
+| Acción | Datos | Notas |
+|---|---|---|
+| `keep_awake` | `{ minutes }` | Anti-apagado: mueve el ratón 1 px cada 40 s (sin desplazarlo) durante `minutes`; `on: false` lo detiene |
+| `save_settings` | `{ settings }` | Guarda las preferencias del dispositivo en la PC (`server/profiles.json`). Se devuelven en el mensaje `ok` del siguiente acceso |
 
 ### Teclado
 

@@ -316,6 +316,22 @@ Comprueba que el servidor no esté ejecutándose **como administrador** mientras
 la ventana de destino no lo está: Windows bloquea la inyección de entrada entre
 niveles de integridad distintos (UIPI). Ejecuta ambos al mismo nivel.
 
+### El dictado por voz no hace nada
+
+Los navegadores solo permiten usar el micrófono en páginas **seguras** (HTTPS o
+`localhost`). RemotePad se sirve por **HTTP en la red local**, así que el
+reconocimiento de voz del navegador no está disponible.
+
+La vía que sí funciona es el **micrófono del propio teclado del celular**:
+
+1. En la app, abre **Teclado** y toca **🎤 Dictar** (enfoca el campo).
+2. En el teclado del celular (Gboard), toca el icono del **micrófono** y habla.
+3. Lo que dictes se escribe en el campo y aparece en la PC.
+
+Si el teclado del celular no tiene micrófono, actívalo en los ajustes de
+Gboard (*Voz → Dictado por voz*). En un teclado físico o en el navegador del
+escritorio, escribe directamente.
+
 ## Comprobar que todo está bien
 
 Doble clic en **`probar.bat`**. Arranca un servidor de pruebas, ejecuta las

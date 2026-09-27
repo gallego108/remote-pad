@@ -91,6 +91,16 @@ bloquea al celular.
 | `test_qr_window.py` | Ventana del QR: rotación automática, caducidad, uso único y petición de parada, con reloj falseado |
 | `test_stop.py` | Las tres vías de parada: comando de consola, botón del celular y `/api/stop` |
 | `test_qr_login.py` | Canje de la clave, token, un solo uso, rechazo de claves falsas y que el QR apunte a la IP de red |
+| `test_qr_rotacion.py` | Rotación del QR, margen de gracia, un solo uso y recuperación con token |
+| `test_acceso_libre.py` | El código de acceso desactivable: arranque con `--no-auth`, cambio en caliente desde el celular y desde la consola, permisos y persistencia |
+| `test_version_cache.py` | Anti-caché: versión inyectada en el HTML, `no-store`, coherencia entre HTML y servidor, y service worker "red primero" |
+
+### Aislamiento de los archivos de estado
+
+`probar.bat` define `REMOTEPAD_TOKENS` y `REMOTEPAD_PROFILES` apuntando a
+`%TEMP%`, así que las pruebas **no escriben** en `server/tokens.json` ni en
+`server/profiles.json` del usuario. Si lanzas una prueba a mano sin esas
+variables, sí usará los archivos reales (inofensivo, pero ensucia).
 
 ## Notas para tocar el código
 

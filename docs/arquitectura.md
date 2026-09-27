@@ -42,14 +42,16 @@ El celular manda **desplazamientos** (`mouse_rel_move`), no posiciones. Con
 posiciones absolutas habría que conocer la resolución y el puntero "saltaría"
 al tocar la pantalla, además de depender de la orientación del teléfono.
 
-La sensibilidad se normaliza dividiendo por la **altura** de la pantalla:
+La distancia recorrida por el dedo se multiplica por la sensibilidad:
 
 ```python
-dx_enviado = (pixeles_del_dedo / altura_de_pantalla) * sensibilidad
+dx_enviado = pixeles_del_dedo * sensibilidad
 ```
 
-Así el mismo ajuste (1,6× por defecto) se siente igual en un portátil de
-1366×768 que en un monitor 4K.
+El servidor aplica cada unidad como **1 píxel** del PC, así que el cliente
+manda la distancia real recorrida. (Ojo: normalizar dividiendo por la altura
+de la pantalla deja valores de ~0,1 que al redondear no mueven el puntero; fue
+justo el fallo por el que el touchpad "no respondía".)
 
 ### El servidor acumula y aplica a ritmo constante
 
@@ -78,8 +80,22 @@ para que un deslizamiento lento también acabe moviendo la página.
 | `server/controller.py` | Traduce acciones en llamadas a la capa nativa; mantiene el estado del puntero y del arrastre |
 | `server/native_input.py` | Única dependencia del sistema operativo: `SendInput`, `SetCursorPos`, `GetAsyncKeyState` |
 | `server/qr.py` | Codificador de QR completo (rejilla, Reed-Solomon, máscaras) y dibujo en consola |
+| `server/laser.py` | Proceso aparte que dibuja el puntero láser: ventana `tkinter` transparente y "click-through" |
 | `web/app.js` | Motor de gestos y comunicación del cliente |
 | `web/qr.html` | Panel local de la PC con el QR en grande |
+
+### Estado que se guarda en disco
+
+Todo vive en la carpeta `server/` y **no se versiona** (ver `.gitignore`):
+
+| Archivo | Contenido | Por qué |
+|---|---|---|
+| `config.json` | Si se pide código de acceso | Que `quitar-codigo.bat` sobreviva al reinicio |
+| `tokens.json` | Accesos de los dispositivos autorizados | Que reiniciar el servidor no obligue a escribir el PIN otra vez |
+| `profiles.json` | Preferencias de cada dispositivo (por token) | Que no haya que reajustar velocidad, gestos, etc. |
+
+Las pruebas **no tocan** esos archivos: `probar.bat` redirige los dos últimos con
+`REMOTEPAD_TOKENS` y `REMOTEPAD_PROFILES` a archivos temporales.
 
 ## Estados del controlador
 

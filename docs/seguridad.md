@@ -50,14 +50,17 @@ instante tarde. Es una ventana pequeña y acotada, y cada código sigue sirviend
   propia PC**, para que nadie de la red pueda apagarlo por esa vía.
 - **Desde la consola**: escribir `q` y pulsar ENTER.
 
-Apagar el servidor no borra los tokens: al volver a arrancarlo, los celulares
-que ya estaban autorizados entran sin pedir nada (hasta 30 días).
+Apagar el servidor no borra los tokens: se guardan en `server/tokens.json` y, al
+volver a arrancarlo, los celulares que ya estaban autorizados entran sin pedir
+nada (hasta 30 días). **Ese archivo es un secreto**: quien lo copie tiene acceso
+a la PC. Está en `.gitignore` y no se comparte.
 
 ### Quitar el código de acceso
 
-Se puede desactivar por completo (PIN y QR) de tres formas: `--no-auth` al
-arrancar, el botón *Ajustes → Quitar el código de acceso* en el celular, o el
-comando `auth off` en la consola de la PC.
+Se puede desactivar por completo (PIN y QR) de cuatro formas:
+`quitar-codigo.bat` (doble clic), `--no-auth` al arrancar, el botón
+*Ajustes → Quitar el código de acceso* en el celular, o el comando `auth off` en
+la consola de la PC.
 
 **Es la opción menos segura de todas**: mientras está quitado, cualquier
 dispositivo de tu red puede conectarse y manejar el ratón y el teclado sin
@@ -143,9 +146,10 @@ arranca con `--no-qr` y usa solo el PIN.
    puede entrar durante esos 5 minutos. El PIN tiene el mismo problema.
 3. Revisa los avisos de la consola: cada acceso se registra con la dirección de
    origen.
-4. Si sospechas, reinicia el servidor: **todos los tokens siguen siendo
-   válidos** (duran 30 días), así que además conviene usar *Olvidar este
-   dispositivo* en cada celular, o borrar el token del `localStorage`.
+4. Si sospechas, ten en cuenta que **los tokens siguen siendo válidos** (duran
+   30 días y se guardan en `server/tokens.json`). Para cortar todos los accesos
+   de golpe: para el servidor y **borra `server/tokens.json`**. También puedes
+   usar *Olvidar este dispositivo* en cada celular.
 5. **El panel `/qr` debe quedarse en la PC.** No lo abras desde otro equipo: no
    funcionará (por diseño) y, si lo hiciera, estarías regalando el acceso.
 

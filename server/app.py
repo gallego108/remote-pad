@@ -33,6 +33,7 @@ import os
 import queue
 import secrets
 import socket
+import subprocess
 import sys
 import time
 import webbrowser
@@ -55,6 +56,21 @@ import qr
 
 # --------------------------------------------------------------------- ajustes
 WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
+# Ajustes que se recuerdan entre arranques (por ahora, solo el codigo de acceso).
+CONFIG_FILE = Path(__file__).resolve().parent / "config.json"
+# Accesos de los dispositivos ya autorizados: se guardan en disco para no tener
+# que volver a pedir el PIN (ni el QR) cada vez que se reinicia el servidor.
+# Las pruebas usan REMOTEPAD_TOKENS para no tocar el archivo real.
+TOKENS_FILE = Path(
+    os.environ.get("REMOTEPAD_TOKENS")
+    or (Path(__file__).resolve().parent / "tokens.json")
+)
+# Preferencias de cada dispositivo (velocidad, gestos, etc.), para no tener que
+# volver a ajustarlas: se guardan en el servidor, ligadas al acceso del celular.
+PROFILES_FILE = Path(
+    os.environ.get("REMOTEPAD_PROFILES")
+    or (Path(__file__).resolve().parent / "profiles.json")
+)
 DEFAULT_PORT = 8765
 
 PIN_ROTATE_SECONDS = 300.0   # cada cuanto cambia el PIN de seguridad
@@ -74,11 +90,13 @@ QR_PRE_REFRESH_SECONDS = 20.0   # antelacion con que el panel pide el siguiente
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.3"
 TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 40
+# Anti-apagado: cada cuanto se mueve el raton 1 px para simular actividad.
+KEEP_AWAKE_INTERVAL = 40.0
 
 STATIC_EXTENSIONS = {
     ".html", ".css", ".js", ".json", ".webmanifest",
@@ -121,6 +139,96 @@ def clamp_number(value: Any, low: float, high: float, default: float = 0.0) -> f
     if math.isnan(number) or math.isinf(number):
         return default
     return max(low, min(high, number))
+
+
+def load_config() -> dict:
+    """
+    Lee los ajustes guardados entre arranques.
+
+    Si el archivo no existe o esta mal, se usan los valores por defecto: es
+    preferible arrancar siempre que quedarse sin servidor por un JSON roto.
+    """
+    try:
+        datos = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        log.warning("No se pudo leer %s (%s): se usan los valores por defecto",
+                    CONFIG_FILE.name, exc)
+        return {}
+    return datos if isinstance(datos, dict) else {}
+
+
+def save_config(cambios: dict) -> None:
+    """Guarda ajustes sin perder los que ya hubiera."""
+    datos = load_config()
+    datos.update(cambios)
+    try:
+        CONFIG_FILE.write_text(json.dumps(datos, indent=2) + "\n",
+                               encoding="utf-8")
+    except Exception as exc:
+        log.warning("No se pudo guardar %s: %s", CONFIG_FILE.name, exc)
+
+
+def load_tokens() -> dict:
+    """
+    Accesos de dispositivos que siguen valiendo, leidos de disco.
+
+    Existen para que reiniciar el servidor NO obligue a todos los celulares a
+    volver a escribir el PIN: el dispositivo guarda su token y entra solo. Si el
+    archivo no esta o esta mal, se empieza de cero (solo se pedira el PIN).
+    """
+    try:
+        datos = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        log.warning("No se pudo leer %s (%s): se pedira el PIN de nuevo",
+                    TOKENS_FILE.name, exc)
+        return {}
+    if not isinstance(datos, dict):
+        return {}
+    corte = time.time() - TOKEN_TTL_SECONDS
+    vivos: dict = {}
+    for token, creado in datos.items():
+        try:
+            cuando = float(creado)
+        except (TypeError, ValueError):
+            continue
+        if cuando >= corte:
+            vivos[str(token)] = cuando
+    return vivos
+
+
+def save_tokens(tokens: dict) -> None:
+    """Guarda los accesos vigentes. Si falla, se sigue funcionando igual."""
+    try:
+        TOKENS_FILE.write_text(json.dumps(tokens, indent=2) + "\n",
+                               encoding="utf-8")
+    except Exception as exc:
+        log.warning("No se pudieron guardar los accesos: %s", exc)
+
+
+def load_profiles() -> dict:
+    """Preferencias guardadas de cada dispositivo (por token)."""
+    try:
+        datos = json.loads(PROFILES_FILE.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        log.warning("No se pudo leer %s (%s): se usan los ajustes del celular",
+                    PROFILES_FILE.name, exc)
+        return {}
+    return datos if isinstance(datos, dict) else {}
+
+
+def save_profiles(perfiles: dict) -> None:
+    """Guarda las preferencias de los dispositivos (best effort)."""
+    try:
+        PROFILES_FILE.write_text(json.dumps(perfiles, indent=2) + "\n",
+                                 encoding="utf-8")
+    except Exception as exc:
+        log.warning("No se pudieron guardar los perfiles: %s", exc)
 
 
 def local_ip() -> str:
@@ -227,7 +335,6 @@ def print_banner(host: str, port: int, pin: str, auth: bool,
         print_qr_block(host, port, login_key)
     print(line)
     print("   Ctrl+C para detener el servidor.\n")
-    print("   Ctrl+C para detener el servidor.\n")
 
 
 # ------------------------------------------------------------------- clientes
@@ -246,6 +353,74 @@ class Client:
     last_seen: float = field(default_factory=time.monotonic)
     send_queue: "deque[dict]" = field(default_factory=deque)
     send_task: Optional[asyncio.Task] = None
+
+
+class LaserPointer:
+    """
+    Controla el proceso del puntero laser (`laser.py`).
+
+    Se lanza solo la primera vez que se usa y se le manda la posicion por la
+    entrada estandar. Si el sistema no puede abrirlo (por ejemplo, sin tkinter)
+    la funcion simplemente no hace nada: el resto de la app sigue igual.
+    """
+
+    def __init__(self) -> None:
+        self._process: Optional[subprocess.Popen] = None
+
+    def _ensure(self) -> bool:
+        if self._process is not None and self._process.poll() is None:
+            return True
+        script = Path(__file__).resolve().parent / "laser.py"
+        try:
+            self._process = subprocess.Popen(
+                [sys.executable, str(script)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except Exception as exc:
+            log.warning("No se pudo abrir el puntero laser: %s", exc)
+            self._process = None
+            return False
+        return True
+
+    def point(self, x: float, y: float) -> bool:
+        if not self._ensure() or self._process is None or self._process.stdin is None:
+            return False
+        try:
+            self._process.stdin.write(f"{int(x)} {int(y)}\n")
+            self._process.stdin.flush()
+            return True
+        except Exception:
+            self._process = None
+            return False
+
+    def hide(self) -> None:
+        if self._process is None or self._process.stdin is None:
+            return
+        try:
+            self._process.stdin.write("off\n")
+            self._process.stdin.flush()
+        except Exception:
+            self._process = None
+
+    def stop(self) -> None:
+        if self._process is None:
+            return
+        try:
+            if self._process.stdin is not None:
+                self._process.stdin.close()
+        except Exception:
+            pass
+        try:
+            self._process.wait(timeout=2)
+        except Exception:
+            try:
+                self._process.kill()
+            except Exception:
+                pass
+        self._process = None
 
 
 class Gateway:
@@ -277,9 +452,20 @@ class Gateway:
         # gracia): (clave, momento de la rotacion, ya_usada).
         self._key_history: "deque[tuple[str, float, bool]]" = deque()
         self._key_failures: dict[str, list[float]] = {}
-        self._tokens: dict[str, float] = {}
+        # Accesos de dispositivos ya autorizados. Se leen de disco para que
+        # reiniciar el servidor no obligue a volver a escribir el PIN.
+        self._tokens: dict[str, float] = load_tokens()
+        if self._tokens:
+            log.info("Accesos recordados de %d dispositivo(s)", len(self._tokens))
+        # Preferencias de cada dispositivo (por token).
+        self._profiles: dict[str, dict] = load_profiles()
         self._pin_failures: dict[str, list[float]] = {}
         self.clients: set[Client] = set()
+        # Puntero laser para presentaciones (se abre bajo demanda).
+        self.laser = LaserPointer()
+        # Anti-apagado: momento (monotonic) en que termina, y ultimo movimiento.
+        self.keep_awake_until: Optional[float] = None
+        self.keep_awake_last = 0.0
 
         self.executor = ThreadPoolExecutor(
             max_workers=3, thread_name_prefix="input"
@@ -463,8 +649,10 @@ class Gateway:
 
     def _prune_tokens(self) -> None:
         cutoff = time.time() - TOKEN_TTL_SECONDS
-        for token in [t for t, created in self._tokens.items() if created < cutoff]:
-            self._tokens.pop(token, None)
+        vivos = {t: c for t, c in self._tokens.items() if c >= cutoff}
+        if len(vivos) != len(self._tokens):
+            self._tokens = vivos
+            save_tokens(self._tokens)
 
     def token_is_valid(self, token: Optional[str]) -> bool:
         if not token:
@@ -479,6 +667,9 @@ class Gateway:
         token = secrets.token_urlsafe(24)
         self._tokens[token] = time.time()
         self._prune_tokens()
+        # Se guarda en disco: el dispositivo no tendra que volver a pedir el PIN
+        # aunque el servidor se reinicie (hasta que caduque, 30 dias).
+        save_tokens(self._tokens)
         return token
 
     def _too_many_failures(self, addr: str) -> bool:
@@ -513,6 +704,8 @@ class Gateway:
         if self.auth_required == activo:
             return False
         self.auth_required = activo
+        # Se recuerda entre arranques: si lo quitas, sigue quitado al reiniciar.
+        save_config({"auth_required": activo})
         if activo:
             # Se genera un PIN nuevo, para que no valga uno visto antes.
             self.pin = new_pin()
@@ -530,6 +723,30 @@ class Gateway:
         self.rotate_pin_if_needed()
         self.rotate_qr_key_if_needed()
         self._discard_stale()
+
+    def keep_awake_tick(self) -> None:
+        """
+        Anti-apagado: mueve el raton 1 px cada KEEP_AWAKE_INTERVAL segundos
+        (sin desplazarlo) para que Windows no apague la pantalla ni suspenda.
+        """
+        hasta = self.keep_awake_until
+        if hasta is None:
+            return
+        ahora = time.monotonic()
+        if ahora >= hasta:
+            self.keep_awake_until = None
+            self.controller.keep_display_awake(False)
+            log.info("Anti-apagado terminado")
+            self.broadcast({"t": "keep_awake", "active": False, "remaining": 0})
+            return
+        if ahora - self.keep_awake_last < KEEP_AWAKE_INTERVAL:
+            return
+        self.keep_awake_last = ahora
+        self.controller.keep_display_awake(True)
+        try:
+            self.controller.jiggle()
+        except Exception:
+            log.debug("jiggle fallo", exc_info=True)
 
     def _discard_stale(self) -> None:
         """
@@ -605,6 +822,7 @@ class Gateway:
         last_shown_key = self.login_key
         while True:
             self.keep_pin_fresh()
+            self.keep_awake_tick()
 
             # Si la clave del QR cambio, se vuelve a dibujar en la consola:
             # asi el codigo que hay en pantalla nunca esta caducado. Se omite
@@ -747,6 +965,80 @@ class Gateway:
             )
             return None
 
+        if action == "zoom":
+            # Pinza de dos dedos: Ctrl + rueda. >0 acerca, <0 aleja.
+            steps = int(clamp_number(data.get("steps"), -50, 50, 0))
+            ok = await asyncio.get_running_loop().run_in_executor(
+                self.executor, c.zoom, steps
+            )
+            return {"ok": bool(ok)}
+
+        if action == "clipboard_get":
+            # Texto que hay ahora en el portapapeles de la PC.
+            texto = await asyncio.get_running_loop().run_in_executor(
+                self.executor, c.clipboard_text
+            )
+            return {"ok": True, "text": texto}
+
+        if action == "clipboard_set":
+            # Deja en el portapapeles de la PC el texto que manda el celular.
+            texto = str(data.get("text", ""))
+            if len(texto) > 100_000:
+                return {"error": "texto demasiado largo"}
+            ok = await asyncio.get_running_loop().run_in_executor(
+                self.executor, c.clipboard_set, texto
+            )
+            return {"ok": bool(ok)}
+
+        if action == "laser":
+            # Puntero laser: x, y llegan normalizados (0..1) desde el touchpad.
+            activo = bool(data.get("on", True))
+            if not activo:
+                self.laser.hide()
+                return {"ok": True, "on": False}
+            ancho, alto = c.screen_size
+            x = clamp_number(data.get("x"), 0.0, 1.0, 0.0) * max(1, ancho - 1)
+            y = clamp_number(data.get("y"), 0.0, 1.0, 0.0) * max(1, alto - 1)
+            self.laser.point(x, y)
+            return {"ok": True, "on": True}
+
+        if action == "keep_awake":
+            # Anti-apagado: mueve el raton 1 px cada 40 s para que Windows no
+            # apague la pantalla. `minutes` es la duracion pedida por el usuario.
+            activo = bool(data.get("on", True))
+            minutos = clamp_number(data.get("minutes"), 0, 24 * 60, 0)
+            if not activo or minutos <= 0:
+                if self.keep_awake_until is not None:
+                    self.keep_awake_until = None
+                    self.controller.keep_display_awake(False)
+                    log.info("Anti-apagado detenido")
+                return {"ok": True, "active": False, "remaining": 0}
+            self.keep_awake_until = time.monotonic() + minutos * 60
+            self.keep_awake_last = 0.0     # que haga el primer movimiento ya
+            log.info("Anti-apagado activo %d minutos", int(minutos))
+            return {
+                "ok": True,
+                "active": True,
+                "remaining": int(self.keep_awake_until - time.monotonic()),
+            }
+
+        if action == "save_settings":
+            # Preferencias del dispositivo (velocidad, gestos...). Se guardan en
+            # el servidor para no tener que reajustarlas si el navegador borra
+            # sus datos, o si se entra desde el mismo celular otra vez.
+            ajustes = data.get("settings")
+            if not isinstance(ajustes, dict) or not client.token:
+                return {"error": "ajustes invalidos"}
+            limpio = {
+                str(clave): valor
+                for clave, valor in ajustes.items()
+                if isinstance(clave, str)
+                and isinstance(valor, (bool, int, float, str))
+            }
+            self._profiles[client.token] = limpio
+            save_profiles(self._profiles)
+            return {"ok": True}
+
         if action == "key_type":
             text = str(data.get("text", ""))
             if len(text) > 4000:
@@ -836,13 +1128,33 @@ class Gateway:
         return {"error": f"accion desconocida: {action}"}
 
     # ----------------------------------------------------------- autenticacion
+    def auth_payload(self, client: Client, con_token: bool = False) -> dict:
+        """
+        Respuesta de acceso correcto.
+
+        Incluye las preferencias guardadas del dispositivo (si las tiene) para
+        que no haya que volver a ajustarlas tras limpiar los datos del navegador.
+        """
+        payload: dict = {
+            "t": "ok",
+            "status": "auth",
+            "id": client.client_id,
+            "screen": list(self.controller.screen_size),
+        }
+        if con_token and client.token:
+            payload["token"] = client.token
+        perfil = self._profiles.get(client.token or "")
+        if isinstance(perfil, dict) and perfil:
+            payload["settings"] = perfil
+        return payload
+
     def handle_auth(self, client: Client, data: dict) -> Optional[dict]:
         token = data.get("token")
         if self.token_is_valid(token):
             client.token = str(token)
             client.kind = "auth"
             log.info("Autorizado por token: %s", client.addr)
-            return {"t": "ok", "status": "auth", "id": client.client_id, "screen": list(self.controller.screen_size)}
+            return self.auth_payload(client)
 
         if data.get("token"):
             # Hay un token guardado en el celular pero ya no vale: es una
@@ -856,13 +1168,7 @@ class Gateway:
             client.token = self.issue_token()
             client.kind = "auth"
             log.info("Autorizado con el PIN: %s", client.addr)
-            return {
-                "t": "ok",
-                "status": "auth",
-                "id": client.client_id,
-                "token": client.token,
-                "screen": list(self.controller.screen_size),
-            }
+            return self.auth_payload(client, con_token=True)
 
         if pin:
             log.warning("PIN incorrecto desde %s (el PIN vigente es %s; "
@@ -935,13 +1241,7 @@ class Gateway:
                 self.clients.add(client)
                 log.info("Autorizado sin codigo (control de acceso "
                          "desactivado): %s", client.addr)
-                self._enqueue(client, {
-                    "t": "ok",
-                    "status": "auth",
-                    "id": client.client_id,
-                    "token": client.token,
-                    "screen": list(self.controller.screen_size),
-                })
+                self._enqueue(client, self.auth_payload(client, con_token=True))
                 return
 
             if action == "auth":
@@ -981,6 +1281,16 @@ class Gateway:
         if action == "ping":
             self._enqueue(client, {"t": "pong", "ts": data.get("ts")})
             return
+        if action == "auth":
+            # Un dispositivo ya autorizado puede volver a presentar sus
+            # credenciales (por ejemplo, una copia antigua de la app que repite
+            # la autenticacion al reconectar). Se trata como un reintento
+            # idempotente en lugar de devolver "accion desconocida: auth".
+            response = self.handle_auth(client, data)
+            if response.get("status") == "auth":
+                self.clients.add(client)
+            self._enqueue(client, response)
+            return
         try:
             response = await self.handle_action(client, action, data)
         except Exception:
@@ -1012,6 +1322,7 @@ class Gateway:
 
     # ------------------------------------------------------------------ cierre
     async def shutdown(self) -> None:
+        self.laser.stop()
         self.controller.release_all()
         for client in list(self.clients):
             await self.stop_sender(client)
@@ -1055,6 +1366,7 @@ def build_app(gateway: Gateway) -> web.Application:
         una copia vieja, la pagina carga, pide el PIN y el servidor recibe
         acciones que ya no existen («accion desconocida»).
         """
+        log.info("HTTP %s  <- %s", request.path_qs, request.remote)
         html = (WEB_ROOT / "index.html").read_text(encoding="utf-8")
         key = request.query.get("k", "")
 
@@ -1095,6 +1407,18 @@ def build_app(gateway: Gateway) -> web.Application:
             or WEB_ROOT not in candidate.parents
         ):
             raise web.HTTPNotFound()
+        # El codigo de la aplicacion se sirve SIN cache: si el celular guardara
+        # una copia antigua de app.js, la pagina cargaria y el servidor recibiria
+        # acciones que ya no existen ("accion desconocida: auth"). Las imagenes
+        # (iconos) si pueden cachearse: no cambian entre versiones.
+        if candidate.suffix.lower() in (".js", ".css", ".html", ".webmanifest"):
+            log.info("HTTP %s  <- %s", request.path_qs, request.remote)
+            return web.FileResponse(
+                candidate,
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                },
+            )
         return web.FileResponse(candidate)
 
     def is_local(request: web.Request) -> bool:
@@ -1222,7 +1546,11 @@ def build_app(gateway: Gateway) -> web.Application:
         })
 
     async def health(request: web.Request) -> web.StreamResponse:
-        return web.json_response({"ok": True, "version": APP_VERSION})
+        return web.json_response({
+            "ok": True,
+            "version": APP_VERSION,
+            "auth_required": gateway.auth_required,
+        })
 
     async def api_stop(request: web.Request) -> web.StreamResponse:
         """
@@ -1276,8 +1604,21 @@ async def run(args: argparse.Namespace) -> None:
 
     if args.no_auth:
         # Arrancar sin codigo de acceso: comodo para probar, pero cualquiera en
-        # la misma WiFi puede manejar la PC.
+        # la misma WiFi puede manejar la PC. Se guarda la eleccion para que
+        # siga quitado en los proximos arranques (se cambia con "auth on" o
+        # desde Ajustes en el celular).
         gateway.auth_required = False
+        save_config({"auth_required": False})
+        log.warning("Arrancando SIN codigo de acceso (--no-auth): la eleccion "
+                    "queda guardada; para volver a pedirlo, escribe 'auth on'")
+    else:
+        # Se respeta lo que se eligio la ultima vez.
+        guardado = load_config()
+        if guardado.get("auth_required") is False:
+            gateway.auth_required = False
+            log.warning("El codigo de acceso esta desactivado (se quito antes "
+                        "con quitar-codigo.bat o desde la app): el celular "
+                        "entra directamente")
 
     app = build_app(gateway)
     runner = web.AppRunner(app, access_log=None)
@@ -1292,12 +1633,10 @@ async def run(args: argparse.Namespace) -> None:
         return
 
     log.info("RemotePad %s en marcha (puerto %d)", APP_VERSION, args.port)
-    if not args.no_auth and not args.no_qr:
+    if gateway.auth_required and not args.no_qr:
         log.info("Comprueba en el celular que la app muestre la version %s "
                  "(Ajustes); si muestra otra, borra los datos del sitio.",
                  APP_VERSION)
-    if not gateway.auth_required:
-        print(AVISO_SIN_ACCESO)
 
     shown_host = args.host
     if shown_host in ("0.0.0.0", "::"):
@@ -1305,14 +1644,19 @@ async def run(args: argparse.Namespace) -> None:
     gateway.lan_host = shown_host
     gateway.console_host = shown_host
     # La consola redibuja el QR cada vez que cambia, para que el que esta a la
-    # vista nunca este caducado.
+    # vista nunca este caducado. Solo tiene sentido si se pide codigo.
     gateway.show_qr_console = (
-        not args.no_qr and not args.no_auth and qr.supports_color()
+        not args.no_qr and gateway.auth_required and qr.supports_color()
     )
+    # Ojo: se pasa el estado REAL (gateway.auth_required), no solo el argumento
+    # --no-auth, porque el codigo puede estar desactivado desde config.json.
     print_banner(
-        shown_host, args.port, gateway.pin, not args.no_auth,
+        shown_host, args.port, gateway.pin, gateway.auth_required,
         login_key=gateway.login_key, show_qr=not args.no_qr,
     )
+    if not gateway.auth_required:
+        # El recuadro va despues del banner para que no corte el logo.
+        print(AVISO_SIN_ACCESO)
 
     if not args.no_browser and shown_host not in ("127.0.0.1", "localhost"):
         webbrowser.open(f"http://127.0.0.1:{args.port}/qr")

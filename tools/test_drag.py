@@ -52,6 +52,14 @@ async def run(port: int, pin: str) -> int:
                         return message.get("d") or {}
                 return {}
 
+            # Se coloca el puntero en el centro POR LA VIA DEL SERVIDOR, para
+            # que tambien quede centrada su posicion interna: si estuviera
+            # pegado a un borde, el desplazamiento se recortaria y la prueba
+            # fallaria sin motivo (o si el celular esta moviendo el raton).
+            ancho, alto = native_input.screen_size()
+            await ws.send_json({"a": "mouse_move", "d": {"x": ancho // 2, "y": alto // 2}})
+            await settle(0.4)
+
             start = native_input.cursor_position()
             print(f"Posicion inicial: {start}")
 

@@ -34,12 +34,24 @@ const el = {
   pinBtn: $('pin-btn'),
   pinChip: $('pin-chip'),
   modeBtn: $('mode-btn'),
+  fastBtn: $('fast-btn'),
+  laserBtn: $('laser-btn'),
   pad: $('pad'),
   padHint: $('pad-hint'),
   cursor: $('cursor'),
   dragRing: $('drag-ring'),
   backdrop: $('sheet-backdrop'),
   toast: $('toast'),
+  tutorial: $('tutorial'),
+  tutIcon: $('tut-icon'),
+  tutStep: $('tut-step'),
+  tutTitle: $('tut-title'),
+  tutBody: $('tut-body'),
+  tutNext: $('tut-next'),
+  tutPrev: $('tut-prev'),
+  tutSkip: $('tut-skip'),
+  awake: $('awake'),
+  awakeState: $('awake-state'),
 };
 
 const sheets = {
@@ -48,6 +60,7 @@ const sheets = {
   media: $('sheet-media'),
   presentation: $('sheet-presentation'),
   settings: $('sheet-settings'),
+  help: $('sheet-help'),
 };
 
 /* -------------------------------------------------------------- ajustes */
@@ -60,6 +73,10 @@ const DEFAULTS = {
   dragLock: true,
   haptics: true,
   edgeZones: true,
+  inertia: true,
+  threeFinger: true,
+  edgeBack: true,
+  pinchZoom: true,
 };
 
 const SETTINGS_KEY = 'remotepad.settings';
@@ -72,6 +89,32 @@ try {
 
 function saveSettings() {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (_) {}
+}
+
+/* Perfil del usuario ------------------------------------------------
+   Las preferencias se guardan tambien en la PC (ligadas a este dispositivo),
+   asi que no hay que reajustarlas aunque el navegador borre sus datos. */
+let perfilTimer = null;
+
+function guardarPerfil() {
+  clearTimeout(perfilTimer);
+  perfilTimer = setTimeout(() => {
+    try { send('save_settings', { settings }); } catch (_) {}
+  }, 700);
+}
+
+function aplicarPerfil(guardado) {
+  if (!guardado || typeof guardado !== 'object') return;
+  const limpio = {};
+  Object.keys(DEFAULTS).forEach((clave) => {
+    if (Object.prototype.hasOwnProperty.call(guardado, clave)) {
+      limpio[clave] = guardado[clave];
+    }
+  });
+  if (!Object.keys(limpio).length) return;
+  settings = { ...settings, ...limpio };
+  saveSettings();
+  refreshSettingsUI();
 }
 
 /* --------------------------------------------------------------- estado */
@@ -91,6 +134,8 @@ const state = {
   tokenDescartado: false,   // ya se reintento sin el token guardado
   detenido: false,          // el servicio se ha detenido (no reconectar)
   authRequired: true,       // la PC pide PIN/QR (lo dice el servidor)
+  fast: false,              // modo rapido: el puntero va FAST_FACTOR veces mas
+  laser: false,             // puntero laser: la pantalla solo senala
 };
 
 /* ------------------------------------------------------------ utilidades */
@@ -150,10 +195,23 @@ function send(action, data) {
   return false;
 }
 
-/* Coordenadas relativas a la ALTURA de la pantalla: la sensibilidad se
-   siente igual en cualquier resolucion y el servidor no necesita escalar. */
+/* El servidor aplica estos valores como PIXELES del PC (los suma a la
+   posicion del puntero). Antes se dividian por la altura de la pantalla y
+   quedaban en ~0,1, asi que al redondear el puntero no se movia nunca:
+   hay que enviar la distancia real recorrida por el dedo, multiplicada por
+   la sensibilidad elegida. */
+const FAST_FACTOR = 3;   // multiplicador del "modo rapido"
+
+/* El servidor convierte las "unidades" de scroll a clics de rueda con
+   UNITS_PER_SCROLL_CLICK = 22. Con el valor antiguo (0,02) hacian falta 1.100
+   px de dedo para UN clic: el scroll era practicamente imperceptible. Con 0,45
+   una pasada de dedo por el panel mueve varias lineas, y se afina con el
+   ajuste "velocidad del scroll". */
+const SCROLL_UNITS_PER_PIXEL = 0.45;
+
 function deltaUnits(pixels) {
-  return (pixels / state.screen.h) * settings.sensitivity;
+  const boost = state.fast ? FAST_FACTOR : 1;
+  return pixels * settings.sensitivity * boost;
 }
 
 function sendMove(dx, dy) {
@@ -162,7 +220,7 @@ function sendMove(dx, dy) {
 
 function sendScroll(dx, dy) {
   const natural = settings.naturalScroll ? -1 : 1;
-  const factor = 0.02 * settings.scrollSpeed;
+  const factor = SCROLL_UNITS_PER_PIXEL * settings.scrollSpeed;
   send('mouse_scroll', { dx: dx * factor * natural, dy: dy * factor * natural });
 }
 
@@ -253,6 +311,12 @@ function handleMessage(message) {
         hideHint();
         flushOutbox();
         requestWakeLock();
+        // Preferencias guardadas en la PC: se aplican solas al entrar.
+        if (message.settings) aplicarPerfil(message.settings);
+        // La primera vez, se muestra el tutorial paso a paso.
+        try {
+          if (!localStorage.getItem(TUTORIAL_KEY)) setTimeout(openTutorial, 800);
+        } catch (_) {}
       }
       break;
 
@@ -337,6 +401,11 @@ function handleMessage(message) {
         toast('PIN actual en la PC: ' + message.d.pin, 2600);
       } else if (message.a === 'set_auth' && message.d) {
         applyAuthMode(message.d.required !== false, message.d.pin);
+      } else if (message.a === 'clipboard_get' && message.d) {
+        ponerTextoTeclado(message.d.text || '');
+        toast((message.d.text || '')
+          ? 'Texto traído del PC'
+          : 'El PC no tenía nada copiado');
       } else if (message.d && message.d.error) {
         toast('No se pudo: ' + message.d.error);
       }
@@ -344,6 +413,16 @@ function handleMessage(message) {
 
     case 'denied':
       toast(message.reason || 'Acción no permitida');
+      break;
+
+    case 'keep_awake':
+      // El servidor avisa cuando se cumple el tiempo pedido.
+      if (!message.active) {
+        awakeHasta = 0;
+        if (awakeTimer) { clearInterval(awakeTimer); awakeTimer = null; }
+        pintarAwake();
+        toast('Anti-apagado terminado (se cumplió el tiempo)', 2600);
+      }
       break;
 
     case 'shutdown':
@@ -379,6 +458,12 @@ const LONG_PRESS_MS = 380;
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_SLOP = 30;
 const SCROLL_SLOP = 16;
+const PINCH_SLOP = 22;       // cambio de distancia entre dedos para el zoom
+const EDGE_ZONE = 28;        // ancho de la zona de borde (atras/adelante)
+const EDGE_TRIGGER = 48;     // recorrido horizontal para dispararlo
+const THREE_SLOP = 46;       // recorrido del gesto con 3 dedos
+const INERTIA_MIN = 0.35;    // velocidad minima (px/ms) para que haya inercia
+const INERTIA_DECAY = 0.9;   // cuanto se frena cada 16 ms
 
 const gesture = {
   pointers: new Map(),
@@ -389,10 +474,16 @@ const gesture = {
   longPressTimer: null,
   lastTapTime: 0,
   lastTapPos: { x: 0, y: 0 },
-  scrollMode: false,
   acc: { x: 0, y: 0 },
   streamTimer: null,
-  twoFinger: { start: 0, moved: 0, active: false },
+  twoFinger: { start: 0, moved: 0, active: false, mode: '', lastDist: 0 },
+  pinchAcc: 0,
+  edge: '',                 // '', 'left' o 'right'
+  edgeFired: false,
+  three: { active: false, fired: false, x: 0, y: 0, moved: 0 },
+  velocity: { x: 0, y: 0 },
+  lastMoveTime: 0,
+  inertiaTimer: null,
 };
 
 function padPoint(event) {
@@ -411,9 +502,20 @@ function moveCursorDot(point) {
   el.cursor.style.top = point.y + 'px';
 }
 
+/* Puntero laser: manda la posicion tocada, normalizada (0..1). */
+function enviarLaser(point) {
+  const rect = el.pad.getBoundingClientRect();
+  send('laser', {
+    on: true,
+    x: point.x / Math.max(1, rect.width),
+    y: point.y / Math.max(1, rect.height),
+  });
+}
+
 function onPointerDown(event) {
   if (event.pointerType === 'mouse' && event.button !== 0) return;
   try { el.pad.setPointerCapture(event.pointerId); } catch (_) {}
+  stopInertia();
 
   const point = padPoint(event);
   gesture.pointers.set(event.pointerId, { x: point.x, y: point.y });
@@ -423,30 +525,57 @@ function onPointerDown(event) {
 
   const count = gesture.pointers.size;
 
+  // En modo laser el panel solo senala: no mueve el puntero ni hace clics.
+  if (state.laser && count === 1) {
+    enviarLaser(point);
+    return;
+  }
+
   if (count === 1) {
     gesture.startPos = { x: point.x, y: point.y };
     gesture.startTime = performance.now();
     gesture.startCount = 1;
     gesture.moved = 0;
-    gesture.scrollMode = false;
     gesture.acc.x = 0;
     gesture.acc.y = 0;
+    gesture.velocity.x = 0;
+    gesture.velocity.y = 0;
+    gesture.lastMoveTime = performance.now();
+    gesture.edgeFired = false;
+    // Zona de borde: deslizar hacia dentro = Atras / Adelante.
+    gesture.edge = '';
+    if (settings.edgeBack) {
+      const ancho = el.pad.clientWidth;
+      if (point.x <= EDGE_ZONE) gesture.edge = 'left';
+      else if (point.x >= ancho - EDGE_ZONE) gesture.edge = 'right';
+    }
     startStreaming();
-    if (state.mode === 'pointer') armLongPress();
+    if (state.mode === 'pointer' && !gesture.edge) armLongPress();
   } else {
     cancelLongPress();
     if (count === 2) {
       gesture.startCount = Math.max(gesture.startCount, 2);
       stopStreaming();
-      gesture.scrollMode = false;
       gesture.acc.x = 0;
       gesture.acc.y = 0;
-      gesture.twoFinger = { start: performance.now(), moved: 0, active: true };
+      const pts = [...gesture.pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      gesture.twoFinger = {
+        start: performance.now(), moved: 0, stretch: 0, active: true,
+        mode: '', lastDist: dist, startDist: dist,
+      };
+      gesture.pinchAcc = 0;
     } else {
       gesture.startCount = Math.max(gesture.startCount, count);
       stopStreaming();
       gesture.twoFinger.active = false;
-      gesture.scrollMode = false;
+      gesture.twoFinger.mode = '';
+      if (count === 3 && settings.threeFinger) {
+        const centro = averagePointer();
+        gesture.three = {
+          active: true, fired: false, x: centro.x, y: centro.y, moved: 0,
+        };
+      }
     }
   }
 }
@@ -489,10 +618,40 @@ function onPointerMove(event) {
 
   const count = gesture.pointers.size;
 
+  if (state.laser && count === 1) {
+    enviarLaser(point);
+    return;
+  }
+
   if (count === 1) {
     const dist = Math.hypot(point.x - gesture.startPos.x, point.y - gesture.startPos.y);
     gesture.moved = Math.max(gesture.moved, dist);
     if (gesture.moved > TAP_SLOP) cancelLongPress();
+
+    // Gesto de borde: Atras (borde izquierdo) / Adelante (borde derecho).
+    if (gesture.edge && !gesture.edgeFired) {
+      const avance = point.x - gesture.startPos.x;
+      const haciaDentro = gesture.edge === 'left' ? avance : -avance;
+      if (haciaDentro > EDGE_TRIGGER) {
+        gesture.edgeFired = true;
+        gesture.acc.x = 0;
+        gesture.acc.y = 0;
+        send('key', {
+          key: gesture.edge === 'left' ? 'left' : 'right',
+          mods: ['alt'],
+        });
+        toast(gesture.edge === 'left' ? 'Atrás' : 'Adelante');
+        buzz(16);
+      }
+      if (gesture.edgeFired) return;
+    }
+
+    // Velocidad reciente, para la inercia al levantar el dedo.
+    const ahora = performance.now();
+    const dt = Math.max(1, ahora - gesture.lastMoveTime);
+    gesture.velocity.x = gesture.velocity.x * 0.6 + (dx / dt) * 0.4;
+    gesture.velocity.y = gesture.velocity.y * 0.6 + (dy / dt) * 0.4;
+    gesture.lastMoveTime = ahora;
 
     let factor = 1;
     if (settings.edgeZones) {
@@ -507,11 +666,47 @@ function onPointerMove(event) {
     return;
   }
 
-  // --- dos o mas dedos
-  if (!gesture.scrollMode) {
+  // --- 3 dedos: arriba/abajo = volumen, izquierda/derecha = cambiar pestana
+  if (count >= 3) {
+    if (gesture.three.active && !gesture.three.fired) {
+      const centro = averagePointer();
+      const avanceX = centro.x - gesture.three.x;
+      const avanceY = centro.y - gesture.three.y;
+      gesture.three.moved += Math.hypot(dx, dy);
+      if (Math.abs(avanceY) > THREE_SLOP || Math.abs(avanceX) > THREE_SLOP) {
+        gesture.three.fired = true;
+        if (Math.abs(avanceY) >= Math.abs(avanceX)) {
+          send('media_volume', { steps: avanceY < 0 ? 4 : -4 });
+          toast(avanceY < 0 ? 'Volumen +' : 'Volumen −');
+        } else {
+          send('key', { key: 'tab', mods: avanceX > 0 ? ['ctrl'] : ['ctrl', 'shift'] });
+          toast(avanceX > 0 ? 'Pestaña siguiente' : 'Pestaña anterior');
+        }
+        buzz(18);
+      }
+    }
+    return;
+  }
+
+  // --- dos dedos: scroll o zoom (pinza)
+  const pts = [...gesture.pointers.values()];
+  const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  const distDelta = dist - gesture.twoFinger.lastDist;
+  gesture.twoFinger.lastDist = dist;
+
+  if (!gesture.twoFinger.mode) {
     gesture.twoFinger.moved += Math.hypot(dx, dy);
-    if (gesture.twoFinger.moved > SCROLL_SLOP) {
-      gesture.scrollMode = true;
+    gesture.twoFinger.stretch += Math.abs(distDelta);
+    // La pinza solo manda si los dedos se separan/juntan MAS de lo que se
+    // desplazan en conjunto: asi un scroll normal (dedos en paralelo) no se
+    // confunde con un zoom.
+    if (settings.pinchZoom
+        && gesture.twoFinger.stretch > PINCH_SLOP
+        && gesture.twoFinger.stretch > gesture.twoFinger.moved * 0.5) {
+      gesture.twoFinger.mode = 'pinch';
+      toast('Zoom');
+    } else if (gesture.twoFinger.moved > SCROLL_SLOP) {
+      gesture.twoFinger.mode = 'scroll';
       gesture.acc.x = 0;
       gesture.acc.y = 0;
       if (state.mode !== 'pointer') {   // arrastrando + scroll = soltar
@@ -520,7 +715,19 @@ function onPointerMove(event) {
       }
     }
   }
-  if (gesture.scrollMode) {
+
+  if (gesture.twoFinger.mode === 'pinch') {
+    gesture.pinchAcc += distDelta;
+    const pasos = Math.trunc(gesture.pinchAcc / 40);
+    if (pasos) {
+      gesture.pinchAcc -= pasos * 40;
+      send('zoom', { steps: pasos });
+      buzz(10);
+    }
+    return;
+  }
+
+  if (gesture.twoFinger.mode === 'scroll') {
     gesture.acc.x += dx;
     gesture.acc.y += dy;
     startStreaming();
@@ -541,7 +748,8 @@ function onPointerUp(event) {
     gesture.moved,
     Math.hypot(point.x - gesture.startPos.x, point.y - gesture.startPos.y)
   );
-  const wasScroll = gesture.scrollMode;
+  const wasScroll = gesture.twoFinger.mode === 'scroll'
+    || gesture.twoFinger.mode === 'pinch';
   const wasTap = !wasScroll && totalMoved <= TAP_SLOP && heldMs <= TAP_MAX_MS;
   const remaining = gesture.pointers.size;
 
@@ -556,7 +764,7 @@ function onPointerUp(event) {
       releaseLeft();
       setMode('pointer');
     }
-    gesture.scrollMode = false;
+    resetGesture(remaining);
     return;
   }
 
@@ -566,7 +774,7 @@ function onPointerUp(event) {
       releaseLeft();
       setMode('pointer');
     }
-    gesture.scrollMode = false;
+    resetGesture(remaining);
     return;
   }
 
@@ -575,20 +783,22 @@ function onPointerUp(event) {
     const twoMs = performance.now() - gesture.twoFinger.start;
     const twoTap = !wasScroll && twoMs < 320 && gesture.twoFinger.moved <= SCROLL_SLOP;
     gesture.twoFinger.active = false;
-    gesture.scrollMode = false;
     if (twoTap && remaining === 0) {
+      resetGesture(remaining);
       send('mouse_click', { button: 'right', clicks: 1 });
       buzz(14);
       return;
     }
-  }
-
-  if (remaining > 0) {
-    gesture.scrollMode = false;
+    resetGesture(remaining);
     return;
   }
 
-  gesture.scrollMode = false;
+  if (remaining > 0) {
+    resetGesture(remaining);
+    return;
+  }
+
+  resetGesture(0);
 
   // --------------------------------------------------------- gesto de 3 dedos
   if (gesture.startCount >= 3 && wasTap) {
@@ -598,7 +808,11 @@ function onPointerUp(event) {
   }
 
   // ------------------------------------------------------------ toque simple
-  if (!wasTap || !settings.tapClick) return;
+  if (!wasTap || !settings.tapClick) {
+    // El dedo se movio (no fue un toque): si venia rapido, inercia.
+    startInertia();
+    return;
+  }
 
   const now = performance.now();
   const isDouble = settings.dragLock
@@ -626,10 +840,46 @@ function onPointerCancel(event) {
   gesture.pointers.delete(event.pointerId);
   cancelLongPress();
   stopStreaming();
-  gesture.scrollMode = false;
   gesture.twoFinger.active = false;
+  gesture.twoFinger.mode = '';
+  gesture.three.active = false;
   if (state.mode !== 'pointer') { releaseLeft(); setMode('pointer'); }
   el.cursor.classList.remove('visible');
+}
+
+/* ------------------------------------------- fin de gesto, inercia y modos */
+function resetGesture(remaining) {
+  if (remaining === 0) {
+    gesture.twoFinger.active = false;
+    gesture.twoFinger.mode = '';
+    gesture.three.active = false;
+    gesture.three.fired = false;
+    gesture.edge = '';
+    gesture.pinchAcc = 0;
+  }
+}
+
+/* Inercia: al levantar el dedo tras un deslizamiento rapido el puntero sigue
+   un poco, frenandose, como en un touchpad real. */
+function startInertia() {
+  if (!settings.inertia) return;
+  const velocidad = Math.hypot(gesture.velocity.x, gesture.velocity.y);
+  if (velocidad < INERTIA_MIN) return;
+  let vx = gesture.velocity.x * 16;
+  let vy = gesture.velocity.y * 16;
+  gesture.inertiaTimer = setInterval(() => {
+    vx *= INERTIA_DECAY;
+    vy *= INERTIA_DECAY;
+    if (Math.hypot(vx, vy) < 0.6) { stopInertia(); return; }
+    send('mouse_rel_move', { dx: deltaUnits(vx), dy: deltaUnits(vy) });
+  }, 16);
+}
+
+function stopInertia() {
+  if (gesture.inertiaTimer) {
+    clearInterval(gesture.inertiaTimer);
+    gesture.inertiaTimer = null;
+  }
 }
 
 /* --------------------------------------------- envío a ritmo constante */
@@ -649,7 +899,9 @@ function pump() {
   gesture.acc.x = 0;
   gesture.acc.y = 0;
 
-  if (gesture.scrollMode) {
+  // El scroll se decide en onPointerMove: si el gesto de dos dedos acabo en
+  // modo "scroll", lo acumulado se manda como rueda; si no, como movimiento.
+  if (gesture.twoFinger.mode === 'scroll') {
     sendScroll(x, y);
     return;
   }
@@ -671,17 +923,192 @@ function openSheet(name) {
   sheet.hidden = false;
   el.backdrop.hidden = false;
   if (name === 'keyboard') {
+    ponerTextoTeclado('');
     const area = $('kb-text');
-    area.value = '';
-    area.focus();
+    if (area) area.focus();
+    const hint = $('dict-hint');
+    if (hint) hint.hidden = true;
   }
   if (name === 'settings') refreshSettingsUI();
+  if (name === 'help') {
+    const acerca = $('help-about');
+    if (acerca) {
+      acerca.textContent = (appVersion() ? `RemotePad ${appVersion()} · ` : '')
+        + `pantalla ${state.screen.w}×${state.screen.h} px · latencia ${state.latency} ms`;
+    }
+  }
 }
 
 function closeSheets() {
   Object.values(sheets).forEach((sheet) => { sheet.hidden = true; });
   el.backdrop.hidden = true;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+
+/* ------------------------------------------------------------ tutorial */
+const TUTORIAL_STEPS = [
+  { icon: '👋', title: 'Bienvenido a RemotePad',
+    body: 'Tu celular es ahora el touchpad de la PC. Te enseño los gestos en unos pasos rápidos.' },
+  { icon: '👆', title: 'Mover el puntero',
+    body: 'Desliza un dedo por el panel grande. Es como mover el ratón.' },
+  { icon: '👊', title: 'Hacer clic',
+    body: 'Tocar = clic izquierdo · 2 dedos = clic derecho · 3 dedos = botón central.' },
+  { icon: '✌️', title: 'Scroll y zoom',
+    body: 'Desliza con 2 dedos para hacer scroll. Pellizca con 2 dedos para acercar o alejar (zoom).' },
+  { icon: '✊', title: 'Arrastrar',
+    body: 'Mantén pulsado 0,4 s y desliza sin soltar para arrastrar. O toca dos veces y desliza '
+      + '(arrastre fijo: toca otra vez para soltar).' },
+  { icon: '⚡', title: 'Modo rápido',
+    body: 'El botón ⚡ de la barra superior multiplica por 3 la velocidad del puntero, '
+      + 'para cruzar la pantalla de una pasada.' },
+  { icon: '⌨️', title: 'Teclado y dictado',
+    body: 'En Teclado escribes y el texto aparece en la PC. Con 🎤 Dictar puedes hablar y que '
+      + 'se escriba solo.' },
+  { icon: '🎵', title: 'Atajos, volumen y láser',
+    body: 'En los paneles de abajo tienes atajos, multimedia y presentaciones. Con 3 dedos ↑↓ '
+      + 'cambias el volumen, y con 🔴 señalas con el puntero láser.' },
+  { icon: '✅', title: '¡Todo listo!',
+    body: 'Puedes volver a ver este tutorial desde ❓ Ayuda. Si algo se queda pegado, pulsa Soltar.' },
+];
+
+const TUTORIAL_KEY = 'remotepad.tutorial-visto';
+let tutIndex = 0;
+
+function openTutorial() {
+  tutIndex = 0;
+  renderTutorial();
+  el.tutorial.hidden = false;
+}
+
+function renderTutorial() {
+  const paso = TUTORIAL_STEPS[tutIndex];
+  el.tutIcon.textContent = paso.icon;
+  el.tutStep.textContent = `Paso ${tutIndex + 1} de ${TUTORIAL_STEPS.length}`;
+  el.tutTitle.textContent = paso.title;
+  el.tutBody.textContent = paso.body;
+  el.tutPrev.disabled = tutIndex === 0;
+  el.tutNext.textContent = tutIndex === TUTORIAL_STEPS.length - 1
+    ? 'Empezar ✔' : 'Siguiente ▶';
+}
+
+function closeTutorial() {
+  el.tutorial.hidden = true;
+  try { localStorage.setItem(TUTORIAL_KEY, '1'); } catch (_) {}
+}
+
+function tutorialPaso(delta) {
+  const siguiente = tutIndex + delta;
+  if (siguiente < 0) return;
+  if (siguiente >= TUTORIAL_STEPS.length) { closeTutorial(); return; }
+  tutIndex = siguiente;
+  renderTutorial();
+}
+
+/* ------------------------------------------------------- anti-apagado */
+let awakeHasta = 0;
+let awakeTimer = null;
+
+function abrirAwake() {
+  if (el.awake) el.awake.hidden = false;
+  pintarAwake();
+}
+
+function pintarAwake() {
+  if (!el.awakeState) return;
+  const restante = Math.max(0, Math.round((awakeHasta - Date.now()) / 1000));
+  if (!restante) {
+    el.awakeState.textContent = 'Apagado: la PC puede apagarse como siempre.';
+    return;
+  }
+  const min = Math.floor(restante / 60);
+  const seg = restante % 60;
+  el.awakeState.textContent =
+    `Activo: quedan ${min} min ${String(seg).padStart(2, '0')} s.`;
+}
+
+function activarAwake(minutos) {
+  send('keep_awake', { minutes: minutos });
+  awakeHasta = Date.now() + minutos * 60000;
+  if (awakeTimer) clearInterval(awakeTimer);
+  awakeTimer = setInterval(pintarAwake, 1000);
+  pintarAwake();
+  toast(`Pantalla encendida durante ${minutos} minutos`, 2600);
+  buzz(14);
+}
+
+function pararAwake() {
+  send('keep_awake', { on: false });
+  awakeHasta = 0;
+  if (awakeTimer) { clearInterval(awakeTimer); awakeTimer = null; }
+  pintarAwake();
+  toast('Anti-apagado detenido');
+}
+
+/* ------------------------------------------------------------- dictado */
+let dictado = null;
+
+/*
+ * Dictado por voz.
+ *
+ * Los navegadores solo dejan usar el microfono en paginas "seguras" (HTTPS o
+ * localhost). RemotePad va por HTTP en la red local, asi que casi siempre la
+ * via que funciona es el microfono del PROPIO TECLADO del celular (Gboard):
+ * se enfoca el campo de texto y el sistema dicta ahi; el texto se envia a la
+ * PC como si lo hubieras escrito. Si la pagina SI es segura y el navegador
+ * trae reconocimiento de voz, se usa directamente.
+ */
+function iniciarDictado() {
+  const area = $('kb-text');
+  const hint = $('dict-hint');
+  const Reconocimiento = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (Reconocimiento && window.isSecureContext) {
+    try {
+      if (dictado) {
+        dictado.stop();
+        dictado = null;
+        if (hint) hint.hidden = true;
+        return;
+      }
+      dictado = new Reconocimiento();
+      dictado.lang = 'es-ES';
+      dictado.continuous = true;
+      dictado.interimResults = true;
+      dictado.onresult = (evento) => {
+        let texto = '';
+        for (let i = evento.resultIndex; i < evento.results.length; i++) {
+          if (evento.results[i].isFinal) texto += evento.results[i][0].transcript;
+        }
+        if (texto) {
+          send('key_type', { text: texto + ' ' });
+          if (area) { area.value += texto + ' '; tecladoPrevious = area.value; }
+        }
+      };
+      dictado.onerror = () => {
+        if (hint) {
+          hint.hidden = false;
+          hint.textContent = 'No se pudo usar el micrófono del navegador. '
+            + 'Usa el 🎤 del teclado del celular.';
+        }
+      };
+      dictado.onend = () => { dictado = null; };
+      dictado.start();
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = '🔴 Dictando… habla normal. Pulsa 🎤 otra vez para parar.';
+      }
+      buzz(14);
+      return;
+    } catch (_) { /* se intenta el plan B */ }
+  }
+
+  if (area) area.focus();
+  if (hint) {
+    hint.hidden = false;
+    hint.textContent = 'Toca el 🎤 del teclado del celular y habla: el texto se '
+      + 'escribirá en el campo y aparecerá en la PC.';
+  }
+  toast('Usa el micrófono del teclado del celular', 3200);
 }
 
 function refreshSettingsUI() {
@@ -695,40 +1122,50 @@ function refreshSettingsUI() {
   $('s-draglock').checked = settings.dragLock;
   $('s-haptics').checked = settings.haptics;
   $('s-edges').checked = settings.edgeZones;
+  $('s-inertia').checked = settings.inertia;
+  $('s-three').checked = settings.threeFinger;
+  $('s-edgeback').checked = settings.edgeBack;
+  $('s-pinch').checked = settings.pinchZoom;
   $('about').textContent =
     `Pantalla: ${state.screen.w}×${state.screen.h} px · latencia ${state.latency} ms`
     + (appVersion() ? ` · versión ${appVersion()}` : ' · versión desconocida');
 }
 
 /* ------------------------------------------------------ teclado remoto */
+let tecladoPrevious = '';
+
+/** Coloca texto en el campo del teclado SIN enviarlo a la PC. */
+function ponerTextoTeclado(texto) {
+  const area = $('kb-text');
+  if (!area) return;
+  area.value = texto;
+  tecladoPrevious = texto;
+}
+
 function bindTyping() {
   const area = $('kb-text');
-  let previous = '';
 
   area.addEventListener('input', () => {
     const value = area.value;
-    if (value.length >= previous.length && value.startsWith(previous)) {
-      send('key_type', { text: value.slice(previous.length) });
-    } else if (value.length < previous.length && previous.startsWith(value)) {
-      const removed = Math.min(previous.length - value.length, 40);
+    if (value.length >= tecladoPrevious.length && value.startsWith(tecladoPrevious)) {
+      send('key_type', { text: value.slice(tecladoPrevious.length) });
+    } else if (value.length < tecladoPrevious.length && tecladoPrevious.startsWith(value)) {
+      const removed = Math.min(tecladoPrevious.length - value.length, 40);
       send('key_type', { text: '\b'.repeat(removed) });
     } else {
       let shared = 0;
-      while (shared < value.length && shared < previous.length
-             && value[shared] === previous[shared]) shared++;
-      const tail = Math.min(previous.length - shared, 40);
+      while (shared < value.length && shared < tecladoPrevious.length
+             && value[shared] === tecladoPrevious[shared]) shared++;
+      const tail = Math.min(tecladoPrevious.length - shared, 40);
       send('key_type', { text: '\b'.repeat(tail) + value.slice(shared) });
     }
-    previous = value;
+    tecladoPrevious = value;
   });
 
-  area.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      send('key', { key: 'enter', mods: [] });
-      previous = area.value;
-    }
-  });
+  // El Enter del teclado del movil NO se intercepta: escribe un salto de linea
+  // normal, para poder escribir varias lineas. Ese salto se envia a la PC como
+  // una linea nueva (en la PC un salto de linea ES un Enter). Para pulsar un
+  // Enter suelto en la PC, sin escribir nada, esta el boton "Enter".
 }
 
 /* --------------------------------------------------------------- hotkeys */
@@ -809,6 +1246,69 @@ function bindUI() {
       setMode('pointer');
     }
   });
+
+  el.fastBtn.addEventListener('click', () => {
+    state.fast = !state.fast;
+    el.fastBtn.classList.toggle('armed', state.fast);
+    el.fastBtn.textContent = state.fast ? `⚡ ${FAST_FACTOR}×` : '⚡ 1×';
+    toast(state.fast
+      ? `Modo rápido: el puntero va ${FAST_FACTOR}×`
+      : 'Velocidad normal');
+    buzz(14);
+  });
+
+  el.laserBtn.addEventListener('click', () => {
+    state.laser = !state.laser;
+    el.laserBtn.classList.toggle('armed', state.laser);
+    if (!state.laser) send('laser', { on: false });
+    toast(state.laser ? 'Láser: toca el panel para señalar' : 'Láser apagado');
+    buzz(14);
+  });
+
+  const kbGet = $('kb-get');
+  if (kbGet) {
+    kbGet.addEventListener('click', () => {
+      send('clipboard_get', {});
+      toast('Trayendo del PC…');
+    });
+  }
+  const kbSend = $('kb-send');
+  if (kbSend) {
+    kbSend.addEventListener('click', () => {
+      const area = $('kb-text');
+      const texto = area ? area.value : '';
+      if (!texto) { toast('No hay texto que enviar'); return; }
+      send('clipboard_set', { text: texto });
+      toast('Copiado en el PC: pégalo con Ctrl+V', 2600);
+    });
+  }
+
+  const kbDict = $('kb-dict');
+  if (kbDict) kbDict.addEventListener('click', iniciarDictado);
+
+  if (el.tutNext) {
+    el.tutNext.addEventListener('click', () => tutorialPaso(1));
+    el.tutPrev.addEventListener('click', () => tutorialPaso(-1));
+    el.tutSkip.addEventListener('click', closeTutorial);
+  }
+  const btnTutorial = $('btn-tutorial');
+  if (btnTutorial) {
+    btnTutorial.addEventListener('click', () => { closeSheets(); openTutorial(); });
+  }
+
+  const btnAwake = $('btn-awake');
+  if (btnAwake) {
+    btnAwake.addEventListener('click', () => { closeSheets(); abrirAwake(); });
+  }
+  document.querySelectorAll('[data-awake]').forEach((button) => {
+    button.addEventListener('click', () => activarAwake(Number(button.dataset.awake)));
+  });
+  const awakeStop = $('awake-stop');
+  if (awakeStop) awakeStop.addEventListener('click', pararAwake);
+  const awakeClose = $('awake-close');
+  if (awakeClose) {
+    awakeClose.addEventListener('click', () => { if (el.awake) el.awake.hidden = true; });
+  }
 
   // --- touchpad
   el.pad.addEventListener('pointerdown', onPointerDown);
@@ -906,6 +1406,7 @@ function bindUI() {
       settings[key] = Number(input.value);
       $(labelId).textContent = Number(input.value).toFixed(1) + '×';
       saveSettings();
+      guardarPerfil();
     });
   };
   bindRange('s-speed', 'v-speed', 'sensitivity');
@@ -916,6 +1417,7 @@ function bindUI() {
     input.addEventListener('change', () => {
       settings[key] = input.checked;
       saveSettings();
+      guardarPerfil();
     });
   };
   bindSwitch('s-accel', 'accel');
@@ -924,6 +1426,10 @@ function bindUI() {
   bindSwitch('s-draglock', 'dragLock');
   bindSwitch('s-haptics', 'haptics');
   bindSwitch('s-edges', 'edgeZones');
+  bindSwitch('s-inertia', 'inertia');
+  bindSwitch('s-three', 'threeFinger');
+  bindSwitch('s-edgeback', 'edgeBack');
+  bindSwitch('s-pinch', 'pinchZoom');
 
   $('btn-fullscreen').addEventListener('click', async () => {
     try {

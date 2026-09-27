@@ -36,6 +36,13 @@ html, body {
 
 body { user-select: none; -webkit-user-select: none; }
 
+/* El atributo hidden tiene que ocultar DE VERDAD.
+   Reglas como ".overlay { display: grid }" o "#app { display: flex }" ganan al
+   estilo del navegador y anulan el atributo hidden, asi que la pantalla de
+   acceso (.overlay) nunca desaparecia: se quedaba tapando el touchpad aunque
+   ya hubieras entrado con el PIN. Con !important se respeta hidden siempre. */
+[hidden] { display: none !important; }
+
 /* ------------------------------------------------------------ acceso */
 .overlay {
   position: fixed;
@@ -402,6 +409,55 @@ input[type="checkbox"] {
   gap: 8px;
   margin-top: 16px;
 }
+
+.key.primary {
+  background: linear-gradient(180deg, var(--accent), #1f6fd0);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------- ayuda */
+.sheet-body.help h3 {
+  margin: 20px 0 6px;
+  font-size: .95rem;
+  color: var(--accent);
+}
+.sheet-body.help p {
+  margin: 0 0 8px;
+  font-size: .86rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.sheet-body.help p b { color: var(--text); }
+.sheet-body.help code {
+  padding: 1px 6px;
+  font-size: .82rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--accent-2);
+}
+
+/* ------------------------------------------------------ tutorial */
+.tutorial { z-index: 70; }
+.card.tut { text-align: center; }
+.tut-icon { font-size: 3rem; line-height: 1.1; }
+.tut-step {
+  margin-top: 6px;
+  font-size: .74rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.card.tut h2 { margin: 8px 0 10px; font-size: 1.15rem; }
+.card.tut p { margin: 0 0 18px; font-size: .9rem; line-height: 1.6; color: var(--muted); }
+.tut-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tut-actions #tut-skip { grid-column: 1 / -1; }
 
 /* --------------------------------------------------------- toast */
 .toast {

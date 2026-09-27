@@ -160,6 +160,28 @@ def _configure() -> None:
     _user32.MapVirtualKeyW.argtypes = (ctypes.c_uint, ctypes.c_uint)
     _user32.MapVirtualKeyW.restype = ctypes.c_uint
 
+    # Portapapeles (para compartir texto entre la PC y el celular).
+    _user32.OpenClipboard.argtypes = (wintypes.HWND,)
+    _user32.OpenClipboard.restype = wintypes.BOOL
+    _user32.GetClipboardData.argtypes = (ctypes.c_uint,)
+    _user32.GetClipboardData.restype = wintypes.HANDLE
+    _user32.CloseClipboard.argtypes = ()
+    _user32.CloseClipboard.restype = wintypes.BOOL
+
+    _kernel32.GlobalLock.argtypes = (wintypes.HANDLE,)
+    _kernel32.GlobalLock.restype = ctypes.c_void_p
+    _kernel32.GlobalUnlock.argtypes = (wintypes.HANDLE,)
+    _kernel32.GlobalUnlock.restype = wintypes.BOOL
+    _kernel32.GlobalAlloc.argtypes = (ctypes.c_uint, ctypes.c_size_t)
+    _kernel32.GlobalAlloc.restype = wintypes.HANDLE
+    _kernel32.GlobalFree.argtypes = (wintypes.HANDLE,)
+    _kernel32.GlobalFree.restype = wintypes.HANDLE
+
+    _user32.EmptyClipboard.argtypes = ()
+    _user32.EmptyClipboard.restype = wintypes.BOOL
+    _user32.SetClipboardData.argtypes = (ctypes.c_uint, wintypes.HANDLE)
+    _user32.SetClipboardData.restype = wintypes.HANDLE
+
 
 _configure()
 
@@ -261,6 +283,50 @@ def move_relative(dx: float, dy: float) -> bool:
     return _send([_mouse_input(int(round(dx)), int(round(dy)), MOUSEEVENTF_MOVE)])
 
 
+def jiggle(offset: int = 1) -> bool:
+    """
+    Genera actividad SIN mover el puntero de sitio: lo desplaza 'offset' px y
+    lo devuelve en el mismo envio. Windows lo cuenta como actividad, asi que la
+    pantalla no se apaga ni el equipo se suspende, y el usuario no lo nota.
+    """
+    if not available():
+        return False
+    paso = max(1, min(4, int(offset)))
+    return _send(
+        [
+            _mouse_input(paso, 0, MOUSEEVENTF_MOVE),
+            _mouse_input(-paso, 0, MOUSEEVENTF_MOVE),
+        ]
+    )
+
+
+# SetThreadExecutionState: la via "oficial" de Windows para no apagarse.
+ES_CONTINUOUS = 0x80000000
+ES_SYSTEM_REQUIRED = 0x00000001
+ES_DISPLAY_REQUIRED = 0x00000002
+
+
+def keep_display_awake(on: bool) -> bool:
+    """
+    Pide a Windows que no apague la pantalla ni suspenda el equipo.
+
+    Se aplica al HILO que la llama, asi que hay que invocarla desde el bucle
+    principal (el mismo que se mantiene vivo). Con on=False se desactiva.
+    """
+    if not available():
+        return False
+    flags = ES_CONTINUOUS
+    if on:
+        flags |= ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+    try:
+        _kernel32.SetThreadExecutionState.argtypes = (ctypes.c_uint,)
+        _kernel32.SetThreadExecutionState.restype = ctypes.c_uint
+        _kernel32.SetThreadExecutionState(flags)
+        return True
+    except Exception:
+        return False
+
+
 BUTTON_FLAGS = {
     "left": (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
     "right": (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
@@ -307,6 +373,91 @@ def scroll(vertical: int, horizontal: int = 0) -> bool:
         if steps:
             items.append(_mouse_input(0, 0, MOUSEEVENTF_HWHEEL, steps * WHEEL_DELTA))
     return _send(items) if items else True
+
+
+def zoom(steps: int) -> bool:
+    """
+    Zoom con Ctrl + rueda (lo que hace la pinza de dos dedos).
+
+    steps > 0 acerca, steps < 0 aleja. Todo va en un solo SendInput para que
+    el Ctrl se suelte siempre, aunque el gesto sea muy corto.
+    """
+    if not available() or not steps:
+        return False
+    clicks = max(-50, min(50, int(round(steps))))
+    if not clicks:
+        return False
+    ctrl = VIRTUAL_KEYS["ctrl"]
+    scan = int(_user32.MapVirtualKeyW(ctrl, MAPVK_VK_TO_VSC)) or ctrl
+    items = [
+        _key_input(0, scan, KEYEVENTF_SCANCODE),
+        _mouse_input(0, 0, MOUSEEVENTF_WHEEL, clicks * WHEEL_DELTA),
+        _key_input(0, scan, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP),
+    ]
+    return _send(items)
+
+
+# -------------------------------------------------------------- portapapeles
+CF_UNICODETEXT = 13
+
+
+def get_clipboard() -> Optional[str]:
+    """Texto que hay ahora mismo en el portapapeles de Windows (None si no hay)."""
+    if not available():
+        return None
+    if not _user32.OpenClipboard(None):
+        return None
+    try:
+        handle = _user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return None
+        pointer = _kernel32.GlobalLock(handle)
+        if not pointer:
+            return None
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            _kernel32.GlobalUnlock(handle)
+    except Exception:
+        return None
+    finally:
+        _user32.CloseClipboard()
+
+
+def set_clipboard(text: str) -> bool:
+    """Deja 'text' en el portapapeles de Windows (para pegarlo en la PC)."""
+    if not available():
+        return False
+    GMEM_MOVEABLE = 0x0002
+    datos = str(text)
+    tamano = (len(datos) + 1) * ctypes.sizeof(ctypes.c_wchar)
+    bloque = _kernel32.GlobalAlloc(GMEM_MOVEABLE, tamano)
+    if not bloque:
+        return False
+    puntero = _kernel32.GlobalLock(bloque)
+    if not puntero:
+        _kernel32.GlobalFree(bloque)
+        return False
+    try:
+        ctypes.memmove(puntero, ctypes.create_unicode_buffer(datos), tamano)
+    finally:
+        _kernel32.GlobalUnlock(bloque)
+
+    if not _user32.OpenClipboard(None):
+        _kernel32.GlobalFree(bloque)
+        return False
+    try:
+        _user32.EmptyClipboard()
+        if not _user32.SetClipboardData(CF_UNICODETEXT, bloque):
+            _kernel32.GlobalFree(bloque)
+            return False
+        # A partir de aqui el bloque es del sistema: no hay que liberarlo.
+        return True
+    except Exception:
+        _kernel32.GlobalFree(bloque)
+        return False
+    finally:
+        _user32.CloseClipboard()
 
 
 # ------------------------------------------------------------------- teclado

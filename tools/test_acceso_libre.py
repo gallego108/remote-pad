@@ -76,6 +76,32 @@ def esperar_texto(proceso: subprocess.Popen, texto: str,
     return "".join(leido)
 
 
+CONFIG = SERVIDOR / "config.json"
+GUARDADO = b""
+
+
+def guardar_config() -> None:
+    """Aparta el config.json del usuario para no tocarlo en las pruebas."""
+    global GUARDADO
+    if CONFIG.exists():
+        GUARDADO = CONFIG.read_bytes()
+        CONFIG.unlink()
+
+
+def restaurar_config() -> None:
+    """Devuelve el config.json a su estado original."""
+    if GUARDADO:
+        CONFIG.write_bytes(GUARDADO)
+    elif CONFIG.exists():
+        CONFIG.unlink()
+
+
+def restablecer_config() -> None:
+    """Deja el config aislado pidiendo codigo (valor por defecto)."""
+    CONFIG.write_text(json.dumps({"auth_required": True}, indent=2) + "\n",
+                      encoding="utf-8")
+
+
 def terminar(proceso: subprocess.Popen) -> None:
     """Cierra el servidor de prueba sin dejar tuberias colgando."""
     if proceso.poll() is not None:
@@ -203,6 +229,7 @@ def prueba_arranque_sin_codigo() -> None:
 # --------------------------------------------------------------------- B
 def prueba_desactivar_en_caliente() -> None:
     print("\n== B) Desactivar desde el celular (ya autorizado) ==")
+    restablecer_config()
     puerto = 8811
     proceso = arrancar(puerto)
     try:
@@ -255,6 +282,7 @@ def prueba_desactivar_en_caliente() -> None:
 # --------------------------------------------------------------------- C
 def prueba_desactivar_desde_consola() -> None:
     print("\n== C) Desactivar con 'auth off' en la consola ==")
+    restablecer_config()
     puerto = 8812
     proceso = arrancar(puerto)
     try:
@@ -285,6 +313,7 @@ def prueba_desactivar_desde_consola() -> None:
 # --------------------------------------------------------------------- D
 def prueba_permisos() -> None:
     print("\n== D) Quitar el codigo exige estar autorizado ==")
+    restablecer_config()
     puerto = 8813
     proceso = arrancar(puerto)
     try:
@@ -310,13 +339,66 @@ def prueba_permisos() -> None:
         terminar(proceso)
 
 
+def prueba_persistencia() -> None:
+    print("\n== E) El ajuste se recuerda al reiniciar ==")
+    # 1) Se arranca normal --no-auth y debe GUARDAR la eleccion.
+    proceso = arrancar(8814, ["--no-auth"])
+    try:
+        check("Con --no-auth arranca sin codigo", bool(esperar_texto(
+            proceso, "CONTROL DE ACCESO DESACTIVADO", 20)))
+    finally:
+        terminar(proceso)
+    check("Y deja el ajuste guardado", CONFIG.exists())
+    if CONFIG.exists():
+        guardado = json.loads(CONFIG.read_text(encoding="utf-8"))
+        check("Guardado como 'sin codigo'",
+              guardado.get("auth_required") is False, f"{guardado}")
+
+    # 2) Se arranca SIN argumentos: debe seguir sin pedir codigo.
+    proceso = arrancar(8815)
+    try:
+        salida = esperar_texto(proceso, "CONTROL DE ACCESO DESACTIVADO", 20)
+        check("Al reiniciar sigue sin pedir codigo",
+              "CONTROL DE ACCESO DESACTIVADO" in salida, salida[-200:])
+        respuesta = asyncio.run(conectar(8815, {"a": "auth",
+                                                "d": {"sinCodigo": True}}))
+        check("Y el celular entra directamente",
+              respuesta.get("t") == "ok", f"{respuesta}")
+    finally:
+        terminar(proceso)
+
+    # 3) Se vuelve a activar y tambien debe quedar guardado. Se comprueba
+    #    arrancando en un puerto nuevo: debe pedir codigo otra vez.
+    subprocess.run(
+        [sys.executable, "-c",
+         f"import sys; sys.path.insert(0, r'{SERVIDOR}'); "
+         "import app; app.save_config({'auth_required': True})"],
+        capture_output=True, text=True, timeout=30,
+    )
+    guardado = json.loads(CONFIG.read_text(encoding="utf-8"))
+    check("El ajuste tambien se puede volver a activar",
+          guardado.get("auth_required") is True, f"{guardado}")
+
+    proceso = arrancar(8816)
+    try:
+        check("Y al reiniciar vuelve a pedir codigo",
+              bool(esperar_pin(proceso, 20)))
+    finally:
+        terminar(proceso)
+
+
 def main() -> int:
     print("Codigo de acceso desactivable")
     print("=" * 62)
-    prueba_arranque_sin_codigo()
-    prueba_desactivar_en_caliente()
-    prueba_desactivar_desde_consola()
-    prueba_permisos()
+    guardar_config()
+    try:
+        prueba_arranque_sin_codigo()
+        prueba_desactivar_en_caliente()
+        prueba_desactivar_desde_consola()
+        prueba_permisos()
+        prueba_persistencia()
+    finally:
+        restaurar_config()
     print("\n" + "=" * 62)
     if failures:
         print(f"  {failures} de {checks} comprobaciones fallidas")

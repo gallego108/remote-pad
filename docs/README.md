@@ -1,8 +1,9 @@
 # Documentación de RemotePad
 
 RemotePad convierte tu celular en un touchpad inalámbrico para la PC: mueve el
-puntero, haz clic, arrastra, escribe texto y controla multimedia y
-presentaciones, desde el navegador del teléfono y por tu propia red WiFi.
+puntero, haz clic, arrastra, escribe o dicta, controla multimedia y
+presentaciones, comparte el portapapeles y evita que la pantalla se apague,
+desde el navegador del teléfono y por tu propia red WiFi.
 
 Si es la primera vez, empieza por el [README](../README.md).
 
@@ -26,8 +27,10 @@ Si es la primera vez, empieza por el [README](../README.md).
 | **Cliente** | Navegador del celular (PWA, sin instalar nada) |
 | **Requisito** | Python 3.9+ con `aiohttp` |
 | **Red** | WiFi local; no necesita internet |
-| **Acceso** | Código QR de un solo uso (vale 3 minutos) o PIN de 6 dígitos |
-| **Funciones** | Puntero, clics, doble clic, scroll, arrastre, teclado, atajos, multimedia, presentaciones |
+| **Acceso** | Código QR de un solo uso (vale 3 minutos) o PIN de 6 dígitos. El dispositivo **recuerda el acceso** (30 días, sobrevive a reinicios) |
+| **Funciones** | Puntero, clics, scroll, zoom, arrastre, inercia, gestos de 2 y 3 dedos, bordes, atrás/adelante, teclado, **dictado**, atajos, multimedia, presentaciones, **portapapeles compartido**, **puntero láser** y **anti-apagado** |
+| **Perfil** | Las preferencias de cada dispositivo se guardan en la PC y se aplican solas |
+| **Ayuda** | Tutorial paso a paso y guía de uso dentro de la propia app (panel *Ayuda*) |
 | **Detenerlo** | Botón en *Ajustes* del celular, `q` + ENTER en la consola, o `Ctrl+C` |
 | **Si no conecta** | `abrir-firewall.bat` (el Firewall de Windows no abre TCP para Python) |
 | **Pruebas** | `probar.bat`: control, arrastre, QR, ventana, parada y acceso |

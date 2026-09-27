@@ -55,7 +55,19 @@ python app.py
 
 1. Conecta el celular a la **misma WiFi**.
 2. Escanea el QR con la cámara, o abre la dirección y escribe el PIN.
-3. Listo.
+3. Listo. El celular **recuerda el acceso** (30 días), así que las próximas
+   veces entra solo. Además, lo que ajustes en *Ajustes* (velocidad, gestos,
+   vibración…) se guarda en la PC, ligado a ese dispositivo: si algún día borras
+   los datos del navegador, al volver a entrar se aplica solo.
+
+### Los lanzadores
+
+| Archivo | Para qué |
+|---|---|
+| `iniciar.bat` | Arrancar (y detener) la aplicación. Doble clic. |
+| `probar.bat` | Comprobar que todo funciona. Doble clic. |
+| `abrir-firewall.bat` | Abrir el puerto en el Firewall, si el celular no conecta. |
+| `quitar-codigo.bat` / `activar-codigo.bat` | Quitar o volver a pedir el PIN y el QR. |
 
 ### Si el celular no conecta: el Firewall
 

@@ -8,6 +8,13 @@ cd /d "%~dp0"
 
 set PORT=8791
 set LOG=%TEMP%\remotepad_test.log
+set RESULT=0
+REM Las pruebas guardan sus accesos en un archivo aparte, para no tocar el
+REM de verdad (server\tokens.json).
+set REMOTEPAD_TOKENS=%TEMP%\remotepad_tokens_test.json
+del "%REMOTEPAD_TOKENS%" >nul 2>nul
+set REMOTEPAD_PROFILES=%TEMP%\remotepad_profiles_test.json
+del "%REMOTEPAD_PROFILES%" >nul 2>nul
 
 echo.
 echo  ============================================================
@@ -42,7 +49,7 @@ for /l %%i in (1,1,30) do (
     if not defined PIN (
         timeout /t 1 /nobreak >nul
         for /f "tokens=*" %%l in ('findstr /r "PIN DE ACCESO" "%LOG%" 2^>nul') do (
-            for /f "tokens=4,5" %%a in ("%%l") do set PIN=%%a%%b
+            for /f "tokens=5,6" %%a in ("%%l") do set PIN=%%a%%b
         )
     )
 )

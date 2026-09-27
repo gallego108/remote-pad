@@ -197,6 +197,34 @@ class DesktopController:
                 # natural", asi que aqui se invierte una sola vez.
                 native_input.scroll(-vertical, -horizontal)
 
+    def zoom(self, steps: int) -> bool:
+        """Zoom con Ctrl + rueda (pinza de dos dedos). >0 acerca, <0 aleja."""
+        self._check_pin()
+        with self._lock:
+            return native_input.zoom(steps)
+
+    def clipboard_text(self) -> str:
+        """Texto del portapapeles de la PC (para enviarlo al celular)."""
+        self._check_pin()
+        with self._lock:
+            return native_input.get_clipboard() or ""
+
+    def clipboard_set(self, text: str) -> bool:
+        """Deja texto en el portapapeles de la PC (para pegarlo alli)."""
+        self._check_pin()
+        with self._lock:
+            return native_input.set_clipboard(text)
+
+    # ------------------------------------------------------- anti-apagado
+    def jiggle(self) -> None:
+        """Mueve el raton 1 px y lo devuelve: actividad sin mover el puntero."""
+        with self._lock:
+            native_input.jiggle(1)
+
+    def keep_display_awake(self, on: bool) -> bool:
+        """Pide a Windows que no apague la pantalla mientras este activo."""
+        return native_input.keep_display_awake(on)
+
     # -------------------------------------------------------------- teclado
     def key_tap(self, key: str, modifiers: Optional[Iterable[str]] = None) -> bool:
         """Pulsa una tecla o combinacion. True si se pudo enviar."""

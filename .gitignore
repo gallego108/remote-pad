@@ -34,6 +34,18 @@ desktop.ini
 qr_consola.txt
 qr_check.png
 
+# Ajustes locales (por ejemplo, si se quito el codigo de acceso). Cada persona
+# decide el suyo con quitar-codigo.bat o activar-codigo.bat, asi que no se
+# versiona.
+server/config.json
+
+# Accesos de los dispositivos ya autorizados (tokens). Es un secreto local de
+# cada equipo: no se versiona.
+server/tokens.json
+
+# Preferencias de cada dispositivo (perfil del usuario).
+server/profiles.json
+
 # Secretos y configuracion local (no deberia haber, pero por si acaso)
 *.local
 .env

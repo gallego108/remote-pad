@@ -1,8 +1,10 @@
 # RemotePad — tu celular como touchpad del PC
 
 Convierte tu celular Android en un **touchpad inalámbrico** para tu PC con
-Windows: mueve el puntero, haz clic, arrastra, escribe y controla el volumen,
-todo desde el navegador del teléfono y por tu propia red WiFi.
+Windows: mueve el puntero, haz clic, arrastra, escribe (o **dicta**), controla
+el volumen, comparte el **portapapeles**, señala con un **puntero láser** y
+hasta evita que la pantalla se apague. Todo desde el navegador del teléfono y
+por tu propia red WiFi.
 
 No hay que instalar nada en el celular: el servidor de la PC sirve la
 aplicación web, y el teléfono solo tiene que abrir una dirección.
@@ -47,17 +49,20 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
 
 ### Quitar el código de acceso (temporalmente)
 
-Si quieres entrar sin PIN ni código QR, hay tres formas:
+Si quieres entrar sin PIN ni código QR, hay cuatro formas:
 
 | Cómo | Qué hacer |
 |---|---|
+| **Doble clic** | `quitar-codigo.bat` (y `activar-codigo.bat` para volver a pedirlo) |
 | **Al arrancar** | `iniciar.bat --no-auth` |
 | **En caliente, desde el celular** | *Ajustes → Quitar el código de acceso* |
 | **En caliente, desde la consola** | Escribe `auth off` y pulsa ENTER |
 
-Para volver a pedirlo: *Ajustes → Volver a pedir el código*, o `auth on` en la
-consola (genera un PIN nuevo). Quien ya estaba dentro sigue dentro: no se expulsa
-a nadie, simplemente deja de pedirse el código a los nuevos.
+Para volver a pedirlo: `activar-codigo.bat`, *Ajustes → Volver a pedir el
+código*, o `auth on` en la consola (genera un PIN nuevo). Quien ya estaba dentro
+sigue dentro: no se expulsa a nadie, simplemente deja de pedirse el código a los
+nuevos. La elección **se recuerda entre reinicios** (se guarda en
+`server/config.json`).
 
 > **Aviso**: mientras está quitado, **cualquiera conectado a tu misma WiFi puede
 > mover el puntero, hacer clic y escribir en tu PC**. La consola lo recuerda con
@@ -89,7 +94,9 @@ a nadie, simplemente deja de pedirse el código a los nuevos.
 
 **Para no repetir el acceso:** en Chrome, menú ⋮ → *Añadir a pantalla de
 inicio*. Así queda como una app con su icono, y el dispositivo recuerda el
-acceso (guarda un token propio): las próximas veces entra directo.
+acceso (guarda un token propio): las próximas veces entra directo, **incluso si
+la PC o el servidor se reinician** (el acceso dura 30 días y se guarda en
+`server/tokens.json`).
 
 ### Cómo funciona el código QR
 
@@ -119,9 +126,26 @@ por un token de dispositivo y entra sin pedir el PIN.
 | Tocar dos veces seguidas | Doble clic |
 | Tocar con 2 dedos a la vez | Clic derecho |
 | Deslizar con 2 dedos | Scroll vertical y horizontal |
+| **Pellizcar con 2 dedos (pinza)** | **Zoom** (Ctrl + rueda) |
 | Tocar con 3 dedos | Clic central (abrir en pestaña nueva…) |
+| **Deslizar con 3 dedos arriba/abajo** | **Subir / bajar volumen** |
+| **Deslizar con 3 dedos izquierda/derecha** | **Pestaña siguiente / anterior** |
+| **Deslizar desde el borde izquierdo/derecho** | **Atrás / Adelante** |
 | Mantener pulsado (0,4 s) | Arrastrar mientras no levantes el dedo |
 | Doble toque y deslizar sin levantar | Arrastre fijo, hasta que toques otra vez |
+
+Además:
+
+- **Modo rápido (⚡)** — en la barra superior. Mientras está activo el puntero se
+  mueve **3× más rápido**: ideal para cruzar la pantalla de una pasada.
+- **Puntero láser (🔴)** — para presentaciones. Mientras está activo, tocar el
+  panel **solo señala** con un punto rojo sobre la pantalla, sin mover el ratón
+  ni hacer clic.
+- **Inercia** — al soltar el dedo tras un deslizamiento rápido el puntero sigue
+  un poco, frenándose, como en un touchpad real (se desactiva en Ajustes).
+- **Portapapeles compartido** — en el panel *Teclado*: **⬇ Traer del PC** pone en
+  el campo el texto copiado en la PC, y **⬆ Copiar en el PC** deja el texto del
+  campo en el portapapeles de la PC (para pegarlo con Ctrl+V).
 
 Los botones **Clic izq. / Clic der. / Soltar / Reconectar** están siempre a la
 vista. El botón de la barra superior (**Puntero**) hace de interruptor maestro
@@ -131,12 +155,26 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 
 - **Teclado** — escribe en el campo y el texto aparece en la PC tal cual
   (acentos, `@`, `¿`, emoji). Debajo tienes Enter, Tab, Esc, flechas, etc.
+  El **Enter** de tu teclado hace un **salto de línea** (puedes escribir varias
+  líneas); para pulsar un Enter suelto en la PC usa el botón **⏎ Enter en la PC**.
+  - **🎤 Dictar** — dictado por voz. Enfoca el campo para que uses el
+    **micrófono del teclado del celular** (Gboard): lo que digas se escribe en
+    la PC. Si la página se sirve por HTTPS y el navegador trae reconocimiento de
+    voz, se usa directamente, sin depender del teclado.
+  - **⬇ Traer del PC / ⬆ Copiar en el PC** — portapapeles compartido.
 - **Atajos** — copiar, pegar, deshacer, Alt+Tab, F11, bloquear la PC…
 - **Multimedia** — ⏮ ⏯ ⏭, silencio y subir/bajar volumen.
 - **Presentar** — anterior/siguiente diapositiva, iniciar (F5), salir, y
   pantalla en negro o blanco (PowerPoint, Impress y similares).
 - **Ajustes** — velocidad del puntero y del scroll, aceleración, desplazamiento
-  natural, vibración y el desbloqueo del dispositivo.
+  natural, inercia, gestos de 3 dedos, bordes, pinza, vibración y el desbloqueo.
+  Incluye **💡 Mantener la pantalla encendida**: eliges cuánto tiempo (5 min a
+  4 h) y la app mueve el ratón 1 píxel cada 40 s para que la PC no se apague
+  ni se suspenda. Todo lo que ajustes se guarda **también en la PC**
+  (`server/profiles.json`, ligado al dispositivo), así que no hay que volver a
+  configurarlo al entrar de nuevo.
+- **Ayuda** — la **guía de uso completa dentro de la app** y un botón para
+  repetir el **tutorial paso a paso** (también aparece solo la primera vez).
 
 ---
 
@@ -147,7 +185,8 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 - **Código QR de un solo uso**: su clave caduca en 5 minutos y se invalida al
   primer escaneo, así que el enlace del historial del navegador deja de servir.
 - Tras acertar el PIN o el QR, el celular recibe un **token** y ya no lo vuelve
-  a pedir.
+  a pedir: se guarda en `server/tokens.json` para que **sobreviva a los
+  reinicios** (hasta 30 días).
 - **8 intentos fallidos** de PIN (o 10 de QR) desde una misma dirección
   bloquean el acceso durante 5 minutos.
 - El panel que muestra el QR en grande **solo responde a la propia PC**.
@@ -187,33 +226,47 @@ remote-pad/
 ├── iniciar.bat              ← doble clic para usar la app
 ├── abrir-firewall.bat       ← si el celular no conecta: abre el puerto
 ├── probar.bat               ← doble clic para comprobar que todo funciona
+├── activar-codigo.bat       ← volver a pedir el PIN y el QR
+├── quitar-codigo.bat        ← quitar el PIN y el QR temporalmente
 ├── server/
 │   ├── app.py               Servidor HTTP + WebSocket, acceso por PIN/QR
 │   ├── qr.py                Generador de códigos QR (sin dependencias)
 │   ├── controller.py        Control del escritorio (puntero, clics, teclado)
 │   ├── native_input.py      Capa nativa de Windows (SendInput, cursor, rueda)
+│   ├── laser.py             Puntero láser (capa transparente sobre la pantalla)
+│   ├── config.json          ¿Se pide código de acceso? — local, no se versiona
+│   ├── tokens.json          Accesos de los dispositivos — local, no se versiona
+│   ├── profiles.json        Preferencias de cada dispositivo — local, no se versiona
 │   └── requirements.txt
 ├── web/                     Aplicación del celular (PWA)
-│   ├── index.html           Interfaz
+│   ├── index.html           Interfaz + guía de uso + tutorial
 │   ├── styles.css           Estilos
-│   ├── app.js               Gestos y comunicación
+│   ├── app.js               Gestos, atajos y comunicación
 │   ├── qr.html              Panel de la PC con el QR en grande
 │   ├── sw.js                Service worker (funcionamiento sin conexión)
 │   └── manifest.webmanifest
 └── tools/
-    ├── diagnostico_red.py   Averigua por qué el celular no conecta
-    ├── test_client.py       Pruebas de extremo a extremo (protocolo completo)
-    ├── test_drag.py         Prueba real de arrastrar y soltar
-    ├── test_qr.py           Verificación del generador de QR
-    ├── test_qr_login.py     Prueba del acceso por QR de extremo a extremo
-    ├── test_qr_window.py    Ventana de 3 minutos del QR
     ├── check_ui.py          Coherencia entre HTML, CSS y JS
-    └── make_icons.py        Genera los iconos de la app
+    ├── diagnostico_red.py   Averigua por qué el celular no conecta
+    ├── diagnostico_qr.py    Diagnóstico del acceso por código QR
+    ├── ver_firewall.py      Estado del Firewall de Windows
+    ├── estado_servidores.py Servidores en marcha y su estado de acceso
+    ├── quitar_codigo_ahora.py  Quita el código en el servidor en marcha
+    ├── make_icons.py        Genera los iconos de la app
+    ├── test_client.py       Extremo a extremo: protocolo completo (35 pruebas)
+    ├── test_drag.py         Arrastrar y soltar de verdad
+    ├── test_stop.py         Parada del servicio (consola, celular, /api/stop)
+    ├── test_qr.py           Verificación del generador de QR (19 pruebas)
+    ├── test_qr_login.py     Acceso por QR de extremo a extremo
+    ├── test_qr_rotacion.py  Rotación del QR y margen de gracia
+    ├── test_qr_window.py    Ventana de validez del QR y del PIN
+    ├── test_acceso_libre.py Código de acceso desactivable
+    └── test_version_cache.py  Anti-caché y detector de versión
 ```
 
 **Requisito único:** Python 3.9 o superior con `aiohttp`
 (`iniciar.bat` lo instala solo si falta). No hacen falta permisos de
-administrador.
+administrador. El puntero láser usa `tkinter`, que viene con Python en Windows.
 
 ---
 
