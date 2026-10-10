@@ -135,6 +135,22 @@ class INPUT(ctypes.Structure):
     _fields_ = [("type", ctypes.c_ulong), ("u", _INPUTUNION)]
 
 
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+_MONITORENUMPROC = ctypes.WINFUNCTYPE(
+    wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT),
+    wintypes.LPARAM,
+)
+MONITORINFOF_PRIMARY = 0x1
+
+
 def _configure() -> None:
     """Declara los prototipos: sin esto ctypes trunca punteros de 64 bits."""
     if not IS_WINDOWS:
@@ -204,6 +220,14 @@ def _configure() -> None:
     _kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
 
 
+    # Varios monitores.
+    _user32.EnumDisplayMonitors.argtypes = (
+        wintypes.HDC, ctypes.POINTER(wintypes.RECT), _MONITORENUMPROC, wintypes.LPARAM
+    )
+    _user32.EnumDisplayMonitors.restype = wintypes.BOOL
+    _user32.GetMonitorInfoW.argtypes = (wintypes.HMONITOR, ctypes.POINTER(_MONITORINFO))
+    _user32.GetMonitorInfoW.restype = wintypes.BOOL
+
     # Pregunta de confirmacion (dispositivos nuevos).
     _user32.MessageBoxTimeoutW.argtypes = (
         wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR,
@@ -233,6 +257,75 @@ def screen_size() -> tuple[int, int]:
         int(_user32.GetSystemMetrics(SM_CXSCREEN)) or 1920,
         int(_user32.GetSystemMetrics(SM_CYSCREEN)) or 1080,
     )
+
+
+# Rectangulo de un monitor en coordenadas del escritorio: (x, y, ancho, alto).
+# El principal empieza en (0, 0); los demas pueden tener coordenadas negativas
+# (un monitor a la izquierda o encima del principal).
+Rect = tuple[int, int, int, int]
+
+
+def monitors() -> list[dict]:
+    """
+    Monitores conectados, el principal primero y el resto de izquierda a derecha.
+
+    Cada uno: {"x", "y", "w", "h", "primary"}. Sin Windows (o si falla la
+    consulta) se devuelve un unico monitor del tamano de la pantalla.
+    """
+    ancho, alto = screen_size()
+    respaldo = [{"x": 0, "y": 0, "w": ancho, "h": alto, "primary": True}]
+    if not available():
+        return respaldo
+    encontrados: list[dict] = []
+
+    def _uno(hmonitor, _hdc, _rect, _datos):
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        if _user32.GetMonitorInfoW(hmonitor, ctypes.byref(info)):
+            r = info.rcMonitor
+            encontrados.append({
+                "x": int(r.left), "y": int(r.top),
+                "w": int(r.right - r.left), "h": int(r.bottom - r.top),
+                "primary": bool(info.dwFlags & MONITORINFOF_PRIMARY),
+            })
+        return True
+
+    try:
+        _user32.EnumDisplayMonitors(None, None, _MONITORENUMPROC(_uno), 0)
+    except Exception:
+        return respaldo
+    if not encontrados:
+        return respaldo
+    encontrados.sort(key=lambda m: (not m["primary"], m["x"], m["y"]))
+    return encontrados
+
+
+def clamp_to_rects(x: float, y: float, rects: list[Rect]) -> tuple[int, int]:
+    """
+    Lleva (x, y) al punto mas cercano que este DENTRO de algun monitor.
+
+    Es pura (no toca el sistema) para poder probarla con distribuciones de
+    monitores simuladas. Con monitores de alturas distintas hay "huecos" en el
+    escritorio virtual: un punto en el hueco se pega al borde del monitor mas
+    cercano, igual que hace el raton fisico.
+    """
+    if not rects:
+        return int(round(x)), int(round(y))
+    mejor: Optional[tuple[int, int]] = None
+    mejor_distancia = float("inf")
+    for izquierda, arriba, ancho, alto in rects:
+        if ancho <= 0 or alto <= 0:
+            continue
+        cx = min(max(int(round(x)), izquierda), izquierda + ancho - 1)
+        cy = min(max(int(round(y)), arriba), arriba + alto - 1)
+        distancia = (cx - x) ** 2 + (cy - y) ** 2
+        if distancia < mejor_distancia:
+            mejor, mejor_distancia = (cx, cy), distancia
+    return mejor if mejor is not None else (int(round(x)), int(round(y)))
+
+
+def monitor_rects() -> list[Rect]:
+    return [(m["x"], m["y"], m["w"], m["h"]) for m in monitors()]
 
 
 def cursor_position() -> Optional[tuple[int, int]]:
@@ -330,24 +423,49 @@ def _key_input(vk: int, scan: int, flags: int) -> INPUT:
 
 
 # --------------------------------------------------------------------- mouse
-def move_absolute(x: int, y: int) -> bool:
-    """
-    Coloca el puntero en coordenadas de pantalla exactas.
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
+MOUSEEVENTF_VIRTUALDESK = 0x4000
 
-    SendInput trabaja en un sistema normalizado de 0..65535 sobre el
-    escritorio virtual, asi que hay que convertir. Se usa SetCursorPos
-    (que acepta pixeles) y SendInput como respaldo.
+
+def virtual_screen() -> Rect:
+    """Rectangulo que abarca todos los monitores: (x, y, ancho, alto)."""
+    if not available():
+        ancho, alto = screen_size()
+        return (0, 0, ancho, alto)
+    return (
+        int(_user32.GetSystemMetrics(SM_XVIRTUALSCREEN)),
+        int(_user32.GetSystemMetrics(SM_YVIRTUALSCREEN)),
+        int(_user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)) or 1920,
+        int(_user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)) or 1080,
+    )
+
+
+def move_absolute(x: int, y: int, rects: Optional[list[Rect]] = None) -> bool:
+    """
+    Coloca el puntero en coordenadas de escritorio exactas.
+
+    Se limita a la zona cubierta por los monitores (`rects`; si no se pasan,
+    se consultan). Antes se limitaba al monitor PRINCIPAL y el puntero no
+    podia pasar a un segundo monitor.
+
+    Se usa SetCursorPos (que acepta pixeles) y SendInput como respaldo: este
+    trabaja en un sistema normalizado de 0..65535 sobre todo el escritorio
+    virtual, asi que hay que convertir.
     """
     if not available():
         return False
-    width, height = screen_size()
-    x = max(0, min(width - 1, int(x)))
-    y = max(0, min(height - 1, int(y)))
+    x, y = clamp_to_rects(x, y, rects if rects is not None else monitor_rects())
     if set_cursor_position(x, y):
         return True
-    nx = int(x * 65535 / max(1, width - 1))
-    ny = int(y * 65535 / max(1, height - 1))
-    return _send([_mouse_input(nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)])
+    izquierda, arriba, ancho, alto = virtual_screen()
+    nx = int((x - izquierda) * 65535 / max(1, ancho - 1))
+    ny = int((y - arriba) * 65535 / max(1, alto - 1))
+    return _send([_mouse_input(
+        nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
+    )])
 
 
 def move_relative(dx: float, dy: float) -> bool:

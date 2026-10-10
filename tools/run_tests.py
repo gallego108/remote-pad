@@ -39,6 +39,8 @@ class Prueba:
     args: list[str] = field(default_factory=list)
     servidor: bool = False       # necesita el servidor compartido de pruebas
     escritorio: bool = False     # mueve el puntero de verdad (no en --ci)
+    cursor: bool = False         # anade --cursor salvo en --ci (solo esa parte
+                                 # de la prueba mueve el puntero)
 
 
 # Orden: primero las rapidas y sin servidor; despues las de extremo a extremo.
@@ -54,6 +56,8 @@ PRUEBAS = [
            servidor=True, escritorio=True),
     Prueba("test_drag.py", ["--port", "{puerto}", "--pin", "{pin}"],
            servidor=True, escritorio=True),
+    Prueba("test_monitores.py", ["--port", "{puerto}", "--pin", "{pin}"],
+           servidor=True, cursor=True),
     Prueba("test_qr_login.py", ["{puerto}"], servidor=True),
     Prueba("test_qr_rotacion.py", ["{puerto}"], servidor=True),
     Prueba("test_version_cache.py", ["{puerto}"], servidor=True),
@@ -165,6 +169,8 @@ def main() -> int:
         for prueba in elegidas:
             orden = [sys.executable, str(HERRAMIENTAS / prueba.script)]
             orden += [a.format(puerto=PUERTO, pin=pin) for a in prueba.args]
+            if prueba.cursor and not args.ci:
+                orden.append("--cursor")
             print(f"\n----- {prueba.script} " + "-" * max(0, 48 - len(prueba.script)))
             sys.stdout.flush()
             resultado = subprocess.run(orden, cwd=str(RAIZ), env=entorno)

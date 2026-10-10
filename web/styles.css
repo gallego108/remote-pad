@@ -404,6 +404,13 @@ textarea#kb-text:focus { border-color: var(--accent); }
   color: var(--accent);
 }
 
+/* El primer bloque de un panel no necesita la raya de separacion. */
+.sheet-body h3.bloque.primero { margin-top: 0; padding-top: 0; border-top: 0; }
+
+/* Botones de pantalla (varios monitores): la del puntero, resaltada. */
+.key.actual { border-color: var(--accent); color: var(--accent); }
+.key small { display: block; margin-top: 2px; color: var(--muted); font-size: .7rem; }
+
 /* Lista de dispositivos con acceso (Ajustes). */
 .devices {
   list-style: none;

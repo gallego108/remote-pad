@@ -878,8 +878,10 @@ class Gateway:
         if action == "mouse_move":
             # Movimiento absoluto: se convierte a relativo para respetar el
             # mismo limite de pantalla y la misma consolidacion de eventos.
-            x = clamp_number(data.get("x"), 0, 100_000)
-            y = clamp_number(data.get("y"), 0, 100_000)
+            # Coordenadas del escritorio: pueden ser negativas si hay un
+            # monitor a la izquierda o encima del principal.
+            x = clamp_number(data.get("x"), -100_000, 100_000)
+            y = clamp_number(data.get("y"), -100_000, 100_000)
             target_x, target_y = c.virtual_position
             self._queue_move(x - target_x, y - target_y)
             return None
@@ -912,8 +914,10 @@ class Gateway:
         if action == "mouse_drag_start":
             # Coloca el puntero sobre el objetivo y presiona: asi el arrastre
             # empieza justo donde el usuario toco la pantalla.
-            x = clamp_number(data.get("x"), 0, 100_000)
-            y = clamp_number(data.get("y"), 0, 100_000)
+            # Coordenadas del escritorio: pueden ser negativas si hay un
+            # monitor a la izquierda o encima del principal.
+            x = clamp_number(data.get("x"), -100_000, 100_000)
+            y = clamp_number(data.get("y"), -100_000, 100_000)
 
             def _start(x=x, y=y):
                 c.mouse_move_to(x, y)
@@ -1080,6 +1084,28 @@ class Gateway:
             activo = bool(data.get("required", True))
             cambiado = self.acceso.set_auth_required(activo, f"peticion de {client.addr}")
             return {"ok": True, "required": self.acceso.auth_required, "cambiado": cambiado}
+
+        if action == "monitor_list":
+            # Monitores conectados, para elegir a cual llevar el puntero.
+            monitores = await asyncio.get_running_loop().run_in_executor(
+                self.executor, lambda: c.monitors
+            )
+            x, y = c.virtual_position
+            actual = next(
+                (i for i, m in enumerate(monitores)
+                 if m["x"] <= x < m["x"] + m["w"] and m["y"] <= y < m["y"] + m["h"]),
+                0,
+            )
+            return {"monitores": monitores, "actual": actual}
+
+        if action == "monitor_goto":
+            indice = int(clamp_number(data.get("index"), 0, 32, 0))
+            monitor = await asyncio.get_running_loop().run_in_executor(
+                self.executor, c.move_to_monitor, indice
+            )
+            if monitor is None:
+                return {"error": "no existe esa pantalla"}
+            return {"ok": True, "index": indice, "monitor": monitor}
 
         if action == "devices_list":
             # Dispositivos con acceso, para gestionarlos desde Ajustes.

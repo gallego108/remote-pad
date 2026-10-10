@@ -436,6 +436,9 @@ function handleMessage(message) {
           : 'El PC no tenía nada copiado');
       } else if (message.a === 'learning' && message.d) {
         pintarAprendizaje(message.d);
+      } else if ((message.a === 'monitor_list' || message.a === 'monitor_goto')
+                 && message.d && !message.d.error) {
+        pintarMonitores(message.d);
       } else if ((message.a === 'devices_list' || message.a === 'device_revoke'
                   || message.a === 'set_confirm') && message.d && !message.d.error) {
         pintarDispositivos(message.d);
@@ -1163,6 +1166,7 @@ function openSheet(name) {
     refreshSettingsUI();
     send('devices_list', {});
   }
+  if (name === 'shortcuts') send('monitor_list', {});
   if (name === 'help') {
     const acerca = $('help-about');
     if (acerca) {
@@ -1176,6 +1180,36 @@ function closeSheets() {
   Object.values(sheets).forEach((sheet) => { sheet.hidden = true; });
   el.backdrop.hidden = true;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+
+/* ------------------------------------------------------ varios monitores */
+let monitoresConocidos = [];
+
+/* Con una sola pantalla el bloque no aparece: no aporta nada. */
+function pintarMonitores(datos) {
+  if (Array.isArray(datos.monitores)) monitoresConocidos = datos.monitores;
+  const actual = typeof datos.index === 'number' ? datos.index : datos.actual;
+  if (datos.ok) toast(`Puntero en la pantalla ${actual + 1}`);
+
+  const bloque = $('monitor-block');
+  const botones = $('monitor-buttons');
+  if (!bloque || !botones) return;
+  bloque.hidden = monitoresConocidos.length < 2;
+  botones.replaceChildren();
+  monitoresConocidos.forEach((monitor, indice) => {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'key' + (indice === actual ? ' actual' : '');
+    boton.textContent = `🖥 Pantalla ${indice + 1}`;
+    const detalle = document.createElement('small');
+    detalle.textContent = `${monitor.w}×${monitor.h}` + (monitor.primary ? ' · principal' : '');
+    boton.append(detalle);
+    boton.addEventListener('click', () => {
+      send('monitor_goto', { index: indice });
+      buzz(10);
+    });
+    botones.append(boton);
+  });
 }
 
 /* ------------------------------------------------- dispositivos con acceso */

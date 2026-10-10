@@ -41,6 +41,9 @@ PRESENTATION_KEYS = {
 }
 
 UNITS_PER_SCROLL_CLICK = 22.0   # unidades del cliente por "click" de rueda
+# Cada cuanto se vuelve a mirar que monitores hay (se pueden conectar o
+# desconectar con la app en marcha). Consultarlo en cada movimiento seria caro.
+MONITOR_REFRESH_SECONDS = 3.0
 
 
 class DesktopController:
@@ -52,6 +55,8 @@ class DesktopController:
         self._pin_verifier = pin_verifier
 
         self._screen_w, self._screen_h = native_input.screen_size()
+        self._monitors: list[dict] = native_input.monitors()
+        self._monitors_at = time.monotonic()
         real = native_input.cursor_position() or (0, 0)
         self._virt_x, self._virt_y = real
         self._lock = threading.RLock()
@@ -76,7 +81,43 @@ class DesktopController:
 
     def refresh_screen_size(self) -> tuple[int, int]:
         self._screen_w, self._screen_h = native_input.screen_size()
+        self.refresh_monitors(force=True)
         return self.screen_size
+
+    # ------------------------------------------------------------- monitores
+    def refresh_monitors(self, force: bool = False) -> list[dict]:
+        ahora = time.monotonic()
+        if force or ahora - self._monitors_at >= MONITOR_REFRESH_SECONDS:
+            self._monitors = native_input.monitors()
+            self._monitors_at = ahora
+        return self._monitors
+
+    @property
+    def monitors(self) -> list[dict]:
+        """Monitores conectados (el principal primero)."""
+        return list(self.refresh_monitors())
+
+    def _rects(self) -> list[tuple[int, int, int, int]]:
+        return [(m["x"], m["y"], m["w"], m["h"]) for m in self.refresh_monitors()]
+
+    def move_to_monitor(self, index: int) -> Optional[dict]:
+        """
+        Lleva el puntero al centro del monitor `index` (0 = el principal).
+
+        Devuelve el monitor, o None si no existe. Sirve para cruzar de una
+        pantalla a otra sin arrastrar el dedo varias veces.
+        """
+        self._check_pin()
+        lista = self.refresh_monitors(force=True)
+        if not 0 <= index < len(lista):
+            return None
+        monitor = lista[index]
+        with self._lock:
+            x = monitor["x"] + monitor["w"] // 2
+            y = monitor["y"] + monitor["h"] // 2
+            if native_input.move_absolute(x, y, self._rects()):
+                self._virt_x, self._virt_y = x, y
+        return monitor
 
     def _check_pin(self) -> None:
         if self._pin_verifier is not None:
@@ -114,8 +155,10 @@ class DesktopController:
 
             target_x = self._virt_x + dx
             target_y = self._virt_y + dy
-            clamped_x = max(0, min(self._screen_w - 1, int(round(target_x))))
-            clamped_y = max(0, min(self._screen_h - 1, int(round(target_y))))
+            # Se limita a la zona que cubren los monitores (todos, no solo el
+            # principal: antes el puntero no podia pasar a un segundo monitor).
+            rects = self._rects()
+            clamped_x, clamped_y = native_input.clamp_to_rects(target_x, target_y, rects)
 
             if clamped_x == self._virt_x and clamped_y == self._virt_y:
                 # Ya estamos en el borde: si el cursor real sigue pegado ahi,
@@ -124,7 +167,7 @@ class DesktopController:
                 self._sync_pointer()
                 return
 
-            if native_input.move_absolute(clamped_x, clamped_y):
+            if native_input.move_absolute(clamped_x, clamped_y, rects):
                 self._virt_x, self._virt_y = clamped_x, clamped_y
             else:
                 self._sync_pointer()
