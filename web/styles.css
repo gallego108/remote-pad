@@ -260,8 +260,9 @@ body { user-select: none; -webkit-user-select: none; }
   border-top: 1px solid var(--line);
 }
 .quickbar { grid-template-columns: repeat(4, 1fr); }
+/* 7 paneles: dos filas de 4. */
 .toolbar {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding-bottom: calc(8px + var(--safe-b));
   border-top: 1px solid #1a2336;
 }
@@ -410,6 +411,80 @@ textarea#kb-text:focus { border-color: var(--accent); }
 /* Botones de pantalla (varios monitores): la del puntero, resaltada. */
 .key.actual { border-color: var(--accent); color: var(--accent); }
 .key small { display: block; margin-top: 2px; color: var(--muted); font-size: .7rem; }
+
+/* Mando: cruceta a la izquierda, botones en rombo a la derecha. */
+.mando {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 16px;
+  margin: 6px 0 14px;
+}
+/* Tamano fluido: cada bloque ocupa media fila (hasta 190 px) y los botones
+   son cuadrados, asi caben en cualquier ancho sin desbordar. */
+.cruceta, .botones-accion {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  max-width: 190px;
+}
+.botones-accion { justify-self: end; }
+.cruceta .mbtn, .botones-accion .mbtn { aspect-ratio: 1; }
+.mbtn {
+  display: grid;
+  place-items: center;
+  font: 600 1.05rem system-ui, sans-serif;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  cursor: pointer;
+}
+.mbtn.pulsado { background: var(--accent); border-color: var(--accent); color: #fff; }
+.mbtn.arriba, .boton-y { grid-area: 1 / 2; }
+.mbtn.izquierda, .boton-x { grid-area: 2 / 1; }
+.mbtn.derecha, .boton-b { grid-area: 2 / 3; }
+.mbtn.abajo, .boton-a { grid-area: 3 / 2; }
+.mbtn.redondo { border-radius: 50%; }
+.boton-a { color: #6fdc8c; }
+.boton-b { color: var(--danger); }
+.boton-x { color: #6aa8ff; }
+.boton-y { color: #f5c542; }
+.mbtn.plano { padding: 12px 0; font-size: .8rem; border-radius: 999px; }
+.mando-centro { margin-bottom: 0; }
+.setting select {
+  width: 100%;
+  padding: 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.mando-mapa {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+.mando-mapa label { display: grid; grid-template-columns: 54px 1fr; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); }
+.mando-mapa input {
+  min-width: 0;
+  padding: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.mando-mapa input.invalida { border-color: var(--danger); }
 
 /* Atajos propios: botones, modo edicion y editor de pasos. */
 .acciones-atajos { margin-top: 12px; }

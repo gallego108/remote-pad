@@ -59,6 +59,7 @@ const sheets = {
   shortcuts: $('sheet-shortcuts'),
   media: $('sheet-media'),
   presentation: $('sheet-presentation'),
+  gamepad: $('sheet-gamepad'),
   settings: $('sheet-settings'),
   help: $('sheet-help'),
 };
@@ -83,6 +84,7 @@ const DEFAULTS = {
   // Atajos propios, como texto JSON: asi viajan al perfil de la PC (que solo
   // guarda valores simples) y no se pierden al borrar los datos del navegador.
   atajos: '[]',
+  mando: '{}',              // teclas del modo mando (JSON, como los atajos)
 };
 
 const SETTINGS_KEY = 'remotepad.settings';
@@ -122,6 +124,7 @@ function aplicarPerfil(guardado) {
   saveSettings();
   refreshSettingsUI();
   pintarAtajos();
+  pintarMando();
 }
 
 /* --------------------------------------------------------------- estado */
@@ -271,6 +274,11 @@ function connect() {
 
   socket.onclose = () => {
     state.authorized = false;
+    // La PC ya suelta las teclas al perder la conexion; aqui solo se limpia
+    // el estado de los botones para que no se queden marcados.
+    mando.dedos.clear();
+    mando.cuentas.clear();
+    document.querySelectorAll('.mbtn.pulsado').forEach((b) => b.classList.remove('pulsado'));
     stopPing();
     setMode('pointer');
     if (state.detenido) {
@@ -1181,6 +1189,7 @@ function openSheet(name) {
 }
 
 function closeSheets() {
+  soltarTodoMando();
   Object.values(sheets).forEach((sheet) => { sheet.hidden = true; });
   el.backdrop.hidden = true;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -1424,6 +1433,135 @@ function bindAtajos() {
     toast(`Atajo «${atajo.nombre}» guardado`);
   });
   pintarAtajos();
+}
+
+/* ----------------------------------------------------------- modo mando
+   Cada boton mantiene su tecla pulsada en la PC (key_down) mientras el dedo
+   esta encima y la suelta al levantarlo (key_up). Varios a la vez: cruceta
+   en diagonal + saltar + correr. */
+const BOTONES_MANDO = ['up', 'down', 'left', 'right', 'a', 'b', 'x', 'y', 'select', 'start'];
+const NOMBRES_MANDO = {
+  up: '▲', down: '▼', left: '◀', right: '▶', a: 'A', b: 'B', x: 'X', y: 'Y',
+  select: 'Select', start: 'Start',
+};
+const PRESETS_MANDO = {
+  flechas: { up: 'up', down: 'down', left: 'left', right: 'right',
+    a: 'space', b: 'esc', x: 'z', y: 'x', select: 'tab', start: 'enter' },
+  wasd: { up: 'w', down: 's', left: 'a', right: 'd',
+    a: 'space', b: 'e', x: 'q', y: 'r', select: 'tab', start: 'esc' },
+};
+
+const mando = {
+  dedos: new Map(),      // pointerId -> tecla
+  cuentas: new Map(),    // tecla -> cuantos dedos la mantienen
+};
+
+function configMando() {
+  let config = {};
+  try { config = JSON.parse(settings.mando || '{}') || {}; } catch (_) { config = {}; }
+  const preset = PRESETS_MANDO[config.preset] ? config.preset
+    : (config.preset === 'propio' ? 'propio' : 'flechas');
+  const propio = { ...PRESETS_MANDO.flechas, ...(config.mapa || {}) };
+  return { preset, mapa: preset === 'propio' ? propio : PRESETS_MANDO[preset], propio };
+}
+
+function guardarConfigMando(preset, propio) {
+  settings.mando = JSON.stringify({ preset, mapa: propio });
+  saveSettings();
+  guardarPerfil();
+}
+
+function teclaMandoValida(tecla) {
+  return tecla.length === 1 ? /^[a-z0-9]$/.test(tecla) : TECLAS_ESPECIALES.has(tecla);
+}
+
+function pulsarMando(boton, pointerId) {
+  const tecla = configMando().mapa[boton.dataset.pad];
+  if (!tecla || mando.dedos.has(pointerId)) return;
+  mando.dedos.set(pointerId, { tecla, boton });
+  const cuenta = (mando.cuentas.get(tecla) || 0) + 1;
+  mando.cuentas.set(tecla, cuenta);
+  if (cuenta === 1) send('key_down', { key: tecla });
+  boton.classList.add('pulsado');
+  buzz(8);
+}
+
+function soltarMando(pointerId) {
+  const dedo = mando.dedos.get(pointerId);
+  if (!dedo) return;
+  mando.dedos.delete(pointerId);
+  const cuenta = (mando.cuentas.get(dedo.tecla) || 1) - 1;
+  if (cuenta <= 0) {
+    mando.cuentas.delete(dedo.tecla);
+    send('key_up', { key: dedo.tecla });
+  } else {
+    mando.cuentas.set(dedo.tecla, cuenta);
+  }
+  if (![...mando.dedos.values()].some((d) => d.boton === dedo.boton)) {
+    dedo.boton.classList.remove('pulsado');
+  }
+}
+
+/* Al cerrar el panel, cambiar de app o perder la conexion no puede quedar
+   ninguna tecla pulsada en la PC. */
+function soltarTodoMando() {
+  [...mando.dedos.keys()].forEach(soltarMando);
+}
+
+function pintarMando() {
+  const { preset, mapa, propio } = configMando();
+  $('mando-preset').value = preset;
+  $('mando-resumen').textContent = BOTONES_MANDO
+    .map((b) => `${NOMBRES_MANDO[b]} ${mapa[b]}`).join(' · ');
+  const editor = $('mando-mapa');
+  editor.hidden = preset !== 'propio';
+  if (preset !== 'propio') return;
+  editor.replaceChildren(...BOTONES_MANDO.map((boton) => {
+    const etiqueta = document.createElement('label');
+    const nombre = document.createElement('span');
+    nombre.textContent = NOMBRES_MANDO[boton];
+    const campo = document.createElement('input');
+    campo.type = 'text';
+    campo.autocapitalize = 'off';
+    campo.autocomplete = 'off';
+    campo.value = propio[boton];
+    campo.addEventListener('change', () => {
+      const valor = ALIAS_TECLAS[campo.value.trim().toLowerCase()] || campo.value.trim().toLowerCase();
+      const valida = teclaMandoValida(valor);
+      campo.classList.toggle('invalida', !valida);
+      if (!valida) {
+        toast(`No conozco la tecla «${campo.value}»`);
+        return;
+      }
+      campo.value = valor;
+      guardarConfigMando('propio', { ...configMando().propio, [boton]: valor });
+      pintarMando();
+    });
+    etiqueta.append(nombre, campo);
+    return etiqueta;
+  }));
+}
+
+function bindMando() {
+  document.querySelectorAll('[data-pad]').forEach((boton) => {
+    boton.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      pulsarMando(boton, event.pointerId);
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((tipo) => {
+      boton.addEventListener(tipo, (event) => soltarMando(event.pointerId));
+    });
+    boton.addEventListener('contextmenu', (event) => event.preventDefault());
+  });
+  $('mando-preset').addEventListener('change', (event) => {
+    soltarTodoMando();
+    guardarConfigMando(event.target.value, configMando().propio);
+    pintarMando();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) soltarTodoMando();
+  });
+  pintarMando();
 }
 
 /* ------------------------------------------------------ varios monitores */
@@ -2315,6 +2453,7 @@ async function init() {
   bindUI();
   bindTyping();
   bindAtajos();
+  bindMando();
   await qrLogin();
   connect();
 

@@ -141,6 +141,7 @@ const REMOTEPAD_WEB = '1.7.0';
     <button class="tool" data-panel="shortcuts"><span>⚡</span>Atajos</button>
     <button class="tool" data-panel="media"><span>🎵</span>Multimedia</button>
     <button class="tool" data-panel="presentation"><span>📊</span>Presentar</button>
+    <button class="tool" data-panel="gamepad"><span>🎮</span>Mando</button>
     <button class="tool" data-panel="settings"><span>⚙️</span>Ajustes</button>
     <button class="tool" data-panel="help"><span>❓</span>Ayuda</button>
   </nav>
@@ -245,6 +246,43 @@ const REMOTEPAD_WEB = '1.7.0';
         <button class="key danger" id="sc-delete" type="button">Borrar</button>
       </div>
     </form>
+  </div>
+</section>
+
+<section class="sheet" id="sheet-gamepad" hidden>
+  <header><h2>Mando</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <div class="mando">
+      <div class="cruceta">
+        <button class="mbtn arriba" type="button" data-pad="up" aria-label="Arriba">▲</button>
+        <button class="mbtn izquierda" type="button" data-pad="left" aria-label="Izquierda">◀</button>
+        <button class="mbtn derecha" type="button" data-pad="right" aria-label="Derecha">▶</button>
+        <button class="mbtn abajo" type="button" data-pad="down" aria-label="Abajo">▼</button>
+      </div>
+      <div class="botones-accion">
+        <button class="mbtn redondo boton-y" type="button" data-pad="y">Y</button>
+        <button class="mbtn redondo boton-x" type="button" data-pad="x">X</button>
+        <button class="mbtn redondo boton-b" type="button" data-pad="b">B</button>
+        <button class="mbtn redondo boton-a" type="button" data-pad="a">A</button>
+      </div>
+    </div>
+    <div class="row2 mando-centro">
+      <button class="mbtn plano" type="button" data-pad="select">Select</button>
+      <button class="mbtn plano" type="button" data-pad="start">Start</button>
+    </div>
+    <p class="tiny" id="mando-resumen"></p>
+
+    <label class="setting">
+      <span>Teclas del mando</span>
+      <select id="mando-preset">
+        <option value="flechas">Flechas · A=Espacio · B=Esc · X=Z · Y=X</option>
+        <option value="wasd">WASD · A=Espacio · B=E · X=Q · Y=R</option>
+        <option value="propio">Mis teclas</option>
+      </select>
+    </label>
+    <div class="mando-mapa" id="mando-mapa" hidden></div>
+    <p class="tiny">Cada botón mantiene la tecla pulsada mientras tengas el dedo
+    encima, como un mando de verdad. Si la conexión se corta, la PC suelta todo.</p>
   </div>
 </section>
 

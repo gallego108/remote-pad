@@ -1094,6 +1094,19 @@ class Gateway:
             )
             return {"ok": bool(ok)}
 
+        if action == "key_down" or action == "key_up":
+            # Modo mando: la tecla queda pulsada mientras el dedo esta en el
+            # boton. Al desconectarse el celular, release_all las suelta.
+            tecla = str(data.get("key", "")).strip().lower()
+            if not (len(tecla) == 1 and tecla.isalnum()) and tecla not in SPECIAL_KEYS:
+                return {"error": "tecla no valida"}
+            # Por la cola de clics, que se ejecuta EN ORDEN: con el ejecutor
+            # (3 hilos) un toque rapido podia soltar la tecla antes de pulsarla
+            # y dejarla pegada. Sin respuesta: son mensajes muy seguidos.
+            funcion = c.key_down if action == "key_down" else c.key_up
+            self._queue_click(lambda funcion=funcion, tecla=tecla: funcion(tecla))
+            return None
+
         if action == "macro":
             # Atajo personalizado del usuario: se ejecuta entero en un hilo,
             # en orden y con sus esperas.
@@ -1197,6 +1210,7 @@ class Gateway:
             return {
                 "button_held": c.drag_button,
                 "position": list(c.virtual_position),
+                "keys_held": c.held_keys,
             }
 
         if action == "refresh_pin":

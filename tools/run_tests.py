@@ -59,6 +59,7 @@ PRUEBAS = [
     Prueba("test_monitores.py", ["--port", "{puerto}", "--pin", "{pin}"],
            servidor=True, cursor=True),
     Prueba("test_atajos.py", ["--port", "{puerto}", "--pin", "{pin}"], servidor=True),
+    Prueba("test_mando.py", ["--port", "{puerto}", "--pin", "{pin}"], servidor=True),
     Prueba("test_qr_login.py", ["{puerto}"], servidor=True),
     Prueba("test_qr_rotacion.py", ["{puerto}"], servidor=True),
     Prueba("test_version_cache.py", ["{puerto}"], servidor=True),

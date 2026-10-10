@@ -44,6 +44,9 @@ UNITS_PER_SCROLL_CLICK = 22.0   # unidades del cliente por "click" de rueda
 # Cada cuanto se vuelve a mirar que monitores hay (se pueden conectar o
 # desconectar con la app en marcha). Consultarlo en cada movimiento seria caro.
 MONITOR_REFRESH_SECONDS = 3.0
+# Modo mando: teclas que se pueden tener pulsadas a la vez (cruceta en
+# diagonal + varios botones). Limita el dano de un cliente que no las suelte.
+MAX_HELD_KEYS = 8
 
 
 class DesktopController:
@@ -63,6 +66,8 @@ class DesktopController:
 
         self._drag_button: Optional[str] = None
         self._scroll_remainder = [0.0, 0.0]
+        # Teclas mantenidas por el modo mando (virtual-key codes).
+        self._held_keys: set[int] = set()
 
     # ------------------------------------------------------------- utilidades
     @property
@@ -207,10 +212,48 @@ class DesktopController:
             for button in ("left", "right", "middle"):
                 native_input.button_up(button)
             self._drag_button = None
+            for vk in list(self._held_keys):
+                native_input.release_key(vk)
+            self._held_keys.clear()
             for key in ("shift", "ctrl", "alt", "cmd"):
                 vk = native_input.resolve_key(key)
                 if vk is not None:
                     native_input.release_key(vk)
+
+    # ------------------------------------------------------- modo mando
+    @property
+    def held_keys(self) -> list[int]:
+        return sorted(self._held_keys)
+
+    def key_down(self, key: str) -> bool:
+        """
+        Mantiene pulsada una tecla (modo mando) hasta key_up o release_all.
+
+        Pulsar otra vez una tecla ya mantenida no envia nada: asi un mensaje
+        repetido no deja una pulsacion "de mas" que el juego leeria como doble.
+        """
+        self._check_pin()
+        vk = native_input.resolve_key(key)
+        if vk is None:
+            return False
+        with self._lock:
+            if vk in self._held_keys:
+                return True
+            if len(self._held_keys) >= MAX_HELD_KEYS:
+                return False
+            if native_input.press_key(vk):
+                self._held_keys.add(vk)
+                return True
+            return False
+
+    def key_up(self, key: str) -> bool:
+        """Suelta una tecla mantenida (o cualquier tecla, por si acaso)."""
+        vk = native_input.resolve_key(key)
+        if vk is None:
+            return False
+        with self._lock:
+            self._held_keys.discard(vk)
+            return native_input.release_key(vk)
 
     def mouse_scroll(self, dx: float, dy: float) -> None:
         """
