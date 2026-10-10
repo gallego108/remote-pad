@@ -2,110 +2,16 @@
 REM ===================================================================
 REM  RemotePad - Verificacion completa
 REM  Arranca un servidor temporal, ejecuta todas las pruebas y lo para.
+REM
+REM  La lista de pruebas vive en tools\run_tests.py (la misma que usa la
+REM  integracion continua). Las pruebas usan archivos de estado temporales:
+REM  no tocan server\tokens.json, profiles.json, learning.json ni config.json.
+REM
+REM  Sin mover el puntero de verdad:   probar.bat --ci
+REM  Solo algunas pruebas:             probar.bat test_qr test_auth
 REM ===================================================================
-setlocal enabledelayedexpansion
+setlocal
 cd /d "%~dp0"
 
-set PORT=8791
-set LOG=%TEMP%\remotepad_test.log
-set RESULT=0
-REM Las pruebas guardan sus accesos en un archivo aparte, para no tocar el
-REM de verdad (server\tokens.json).
-set REMOTEPAD_TOKENS=%TEMP%\remotepad_tokens_test.json
-del "%REMOTEPAD_TOKENS%" >nul 2>nul
-set REMOTEPAD_PROFILES=%TEMP%\remotepad_profiles_test.json
-del "%REMOTEPAD_PROFILES%" >nul 2>nul
-set REMOTEPAD_LEARNING=%TEMP%\remotepad_learning_test.json
-del "%REMOTEPAD_LEARNING%" >nul 2>nul
-
-echo.
-echo  ============================================================
-echo   RemotePad - comprobando el proyecto
-echo  ============================================================
-echo.
-
-echo  [1/4] Sintaxis de Python...
-python -m py_compile server\app.py server\qr.py server\controller.py server\native_input.py >nul 2>nul
-if errorlevel 1 (
-    echo        FALLO
-    python -m py_compile server\app.py server\qr.py server\controller.py server\native_input.py
-    exit /b 1
-)
-echo        correcta
-
-echo  [2/4] Coherencia de la interfaz (HTML/CSS/JS)...
-python tools\check_ui.py >nul 2>nul
-if errorlevel 1 (
-    echo        FALLO
-    python tools\check_ui.py
-    exit /b 1
-)
-echo        correcta
-
-echo  [3/4] Arrancando servidor de pruebas en el puerto %PORT%...
-start /b cmd /c "cd server && python app.py --port %PORT% --no-browser > ""%LOG%"" 2>&1"
-
-REM Esperamos a que aparezca el PIN en el registro.
-set PIN=
-for /l %%i in (1,1,30) do (
-    if not defined PIN (
-        timeout /t 1 /nobreak >nul
-        for /f "tokens=*" %%l in ('findstr /r "PIN DE ACCESO" "%LOG%" 2^>nul') do (
-            for /f "tokens=5,6" %%a in ("%%l") do set PIN=%%a%%b
-        )
-    )
-)
-
-if not defined PIN (
-    echo        FALLO: el servidor no arranco. Registro:
-    type "%LOG%"
-    exit /b 1
-)
-echo        servidor listo (PIN !PIN!)
-
-echo  [4/4] Pruebas de extremo a extremo...
-python tools\test_qr.py
-if errorlevel 1 set RESULT=1
-python tools\test_qr_window.py
-if errorlevel 1 set RESULT=1
-python tools\test_stop.py
-if errorlevel 1 set RESULT=1
-python tools\test_client.py --port %PORT% --pin !PIN! --cursor
-if errorlevel 1 set RESULT=1
-python tools\test_drag.py --port %PORT% --pin !PIN!
-if errorlevel 1 set RESULT=1
-python tools\test_qr_login.py %PORT%
-if errorlevel 1 set RESULT=1
-python tools\test_qr_rotacion.py %PORT%
-if errorlevel 1 set RESULT=1
-python tools\test_version_cache.py %PORT%
-if errorlevel 1 set RESULT=1
-python tools\test_acceso_libre.py
-if errorlevel 1 set RESULT=1
-python tools\test_aprendizaje.py
-if errorlevel 1 set RESULT=1
-python tools\test_seguridad.py
-if errorlevel 1 set RESULT=1
-python tools\test_auth.py
-if errorlevel 1 set RESULT=1
-python tools\test_dispositivos.py
-if errorlevel 1 set RESULT=1
-python tools\test_https.py
-if errorlevel 1 set RESULT=1
-
-REM Paramos el servidor de pruebas.
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr LISTENING') do (
-    taskkill /f /pid %%p >nul 2>nul
-)
-
-echo.
-if %RESULT%==0 (
-    echo  ============================================================
-    echo   TODO CORRECTO
-    echo  ============================================================
-) else (
-    echo  ============================================================
-    echo   HAY FALLOS - revisa la salida de arriba
-    echo  ============================================================
-)
-exit /b %RESULT%
+python tools\run_tests.py %*
+exit /b %errorlevel%

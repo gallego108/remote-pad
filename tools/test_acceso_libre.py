@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import subprocess
 import sys
@@ -76,7 +77,9 @@ def esperar_texto(proceso: subprocess.Popen, texto: str,
     return "".join(leido)
 
 
-CONFIG = SERVIDOR / "config.json"
+# Si el lanzador de pruebas aisla config.json (REMOTEPAD_CONFIG), se usa ese:
+# es el mismo que leen los servidores que arranca esta prueba.
+CONFIG = Path(os.environ.get("REMOTEPAD_CONFIG") or (SERVIDOR / "config.json"))
 GUARDADO = b""
 
 

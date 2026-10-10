@@ -1,0 +1,29 @@
+# Pruebas de RemotePad en cada push y pull request.
+#
+# Se usa Windows porque el servidor habla con la API Win32. Las pruebas que
+# mueven el puntero de verdad (test_client --cursor, test_drag) se omiten con
+# --ci: los servidores de integracion no tienen una sesion de escritorio.
+name: Pruebas
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r server/requirements.txt cryptography
+
+      - name: Pruebas
+        run: python tools/run_tests.py --ci
