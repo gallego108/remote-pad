@@ -1,5 +1,22 @@
 # Historial de cambios
 
+## 1.14.0
+
+- **Abrir programas desde el celular.** El panel **🗂️ Programas** tiene una
+  sección nueva, **Abrir programa**: el historial de los programas que has
+  usado en la PC (con su nombre real, su icono y cuándo los usaste), del más
+  reciente al más antiguo. Toca uno o deslízalo a la derecha para abrirlo,
+  aunque esté cerrado; deslízalo a la izquierda para quitarlo del historial.
+  Funciona también con las apps de la Microsoft Store (WhatsApp, Outlook,
+  Claude…), que se abren por su identificador de aplicación. El historial se
+  rellena solo al cambiar de ventana, guarda 30 programas y se queda en la
+  PC (`server/history.json`). Por seguridad el celular solo envía un
+  identificador: la ruta la pone el servidor, así que no se puede ejecutar
+  nada que no estuviera ya en la PC.
+- **El panel no se cierra al ver un programa.** Igual que al cerrarlos, al
+  tocar (o deslizar a la derecha) un programa abierto el panel sigue a la
+  vista y la lista se actualiza, para poder ir de uno a otro.
+
 ## 1.13.0
 
 - **Deslizar para abrir o cerrar programas.** En «Programas abiertos», desliza

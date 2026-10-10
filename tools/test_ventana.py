@@ -323,6 +323,21 @@ async def prueba_protocolo(puerto: int, pin: str) -> None:
         await ws.send_str(json.dumps({"a": "window_close", "d": {"id": 0}}))
         check("window_close con un id invalido se rechaza",
               "error" in await respuesta("window_close"))
+
+        # Historial: se consulta, pero no se abre nada de verdad.
+        await ws.send_str(json.dumps({"a": "programs_history", "d": {}}))
+        datos = await respuesta("programs_history")
+        check("programs_history devuelve programas e iconos",
+              isinstance(datos.get("programs"), list) and isinstance(datos.get("icons"), dict),
+              str(datos)[:200])
+        check("El historial no lleva rutas", "path" not in json.dumps(datos))
+        await ws.send_str(json.dumps({"a": "program_launch",
+                                      "d": {"id": "C:\Windows\System32\calc.exe"}}))
+        check("program_launch solo acepta ids del historial (no rutas)",
+              "error" in await respuesta("program_launch"))
+        await ws.send_str(json.dumps({"a": "program_forget", "d": {"id": "noexiste"}}))
+        check("program_forget de un id desconocido no hace nada",
+              (await respuesta("program_forget")).get("ok") is False)
         await ws.close()
 
 

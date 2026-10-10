@@ -26,6 +26,7 @@ os.environ["REMOTEPAD_TOKENS"] = str(_TMP / "tokens.json")
 os.environ["REMOTEPAD_PROFILES"] = str(_TMP / "profiles.json")
 os.environ["REMOTEPAD_CONFIG"] = str(_TMP / "config.json")
 os.environ["REMOTEPAD_LEARNING"] = str(_TMP / "learning.json")
+os.environ["REMOTEPAD_HISTORY"] = str(_TMP / "history.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))

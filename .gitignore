@@ -49,6 +49,9 @@ server/profiles.json
 # Lo que la PC ha aprendido de tu forma de usar el puntero.
 server/learning.json
 
+# Programas usados en la PC (historial para abrirlos desde el celular).
+server/history.json
+
 # Secretos y configuracion local (no deberia haber, pero por si acaso)
 *.local
 .env

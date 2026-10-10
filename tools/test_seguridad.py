@@ -49,6 +49,7 @@ def entorno_aislado() -> dict:
     entorno["REMOTEPAD_TOKENS"] = str(carpeta / "tokens.json")
     entorno["REMOTEPAD_PROFILES"] = str(carpeta / "profiles.json")
     entorno["REMOTEPAD_LEARNING"] = str(carpeta / "learning.json")
+    entorno["REMOTEPAD_HISTORY"] = str(carpeta / "history.json")
     entorno["REMOTEPAD_CONFIG"] = str(carpeta / "config.json")
     entorno["PYTHONIOENCODING"] = "utf-8"
     return entorno

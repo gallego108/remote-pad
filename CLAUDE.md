@@ -25,7 +25,7 @@ probar.bat                                  # double-click wrapper around run_te
 
 Tests are standalone scripts in `tools/` (no pytest); each prints `[OK]`/`[FALLO]` and exits non-zero on failure. The test list lives **only** in `tools/run_tests.py` — register new tests there (`servidor=True` gets `{puerto}`/`{pin}` of the shared server; `escritorio=True` is skipped in `--ci`; `cursor=True` appends `--cursor` except in `--ci`). Tests that start their own server use their own ports (879x).
 
-**State-file isolation:** server state (`server/tokens.json`, `profiles.json`, `learning.json`, `config.json`, `https/`) is local and gitignored. `run_tests.py` redirects all of it to a temp dir via `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES`, `REMOTEPAD_LEARNING`, `REMOTEPAD_CONFIG`, `REMOTEPAD_HTTPS_DIR`, and sets `REMOTEPAD_SIN_VENTANAS=1` (new-device confirmation is answered via console stdin instead of a Windows dialog). Set these yourself if you run a server-starting test or the server by hand for experiments.
+**State-file isolation:** server state (`server/tokens.json`, `profiles.json`, `learning.json`, `history.json`, `config.json`, `https/`) is local and gitignored. `run_tests.py` redirects all of it to a temp dir via `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES`, `REMOTEPAD_LEARNING`, `REMOTEPAD_HISTORY`, `REMOTEPAD_CONFIG`, `REMOTEPAD_HTTPS_DIR`, and sets `REMOTEPAD_SIN_VENTANAS=1` (new-device confirmation is answered via console stdin instead of a Windows dialog). Set these yourself if you run a server-starting test or the server by hand for experiments.
 
 ## Architecture
 
@@ -42,6 +42,7 @@ web/app.js ──WebSocket JSON──► server/app.py (Gateway) ──► contr
 - **`server/certificado.py`** — local CA + server cert for `--https` (re-signs the leaf with the same CA when the LAN IP changes).
 - **`server/qr.py`** — dependency-free QR encoder. Bit placement is fragile; always verify with `test_qr.py` rather than by eye.
 - **`server/learning.py`** — adaptive pointer gain per foreground application. Client-side learning lives in `app.js`.
+- **`server/historial.py`** — history of programs used on the PC (recorded on foreground change in `Gateway.historial_tick`), relaunchable from the phone. The phone only sends an id; the server maps it to the path/AUMID. **`server/iconos.py`** — pure icon → PNG conversion and cache (Win32 drawing stays in `native_input.window_icon`).
 - **`server/laser.py`** — separate process drawing a transparent click-through `tkinter` overlay.
 - **`web/app.js`** — single `'use strict'` file, no modules/frameworks. Gesture state in `gesture`, app state in `state`. User settings (including custom shortcuts `atajos` and gamepad keys `mando`, stored as JSON strings) live in `settings`, are synced to the PC via `save_settings` and come back in the auth `ok` message. Render server-provided strings (device names come from User-Agents) with `textContent`, never `innerHTML`.
 - **`web/qr.html`** — PC-side QR panel at `/qr`, served only to localhost.

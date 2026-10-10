@@ -79,6 +79,7 @@ async def prueba_servidor(carpeta: Path) -> None:
         "REMOTEPAD_TOKENS": str(carpeta / "tokens.json"),
         "REMOTEPAD_PROFILES": str(carpeta / "profiles.json"),
         "REMOTEPAD_LEARNING": str(carpeta / "learning.json"),
+        "REMOTEPAD_HISTORY": str(carpeta / "history.json"),
         "REMOTEPAD_CONFIG": str(carpeta / "config.json"),
         "PYTHONIOENCODING": "utf-8",
     })

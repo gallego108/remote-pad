@@ -94,6 +94,7 @@ if IS_WINDOWS:
     _user32 = ctypes.windll.user32
     _kernel32 = ctypes.windll.kernel32
     _gdi32 = ctypes.windll.gdi32
+    _version = ctypes.windll.version
     try:
         _dwmapi = ctypes.windll.dwmapi
     except OSError:  # pragma: no cover
@@ -102,6 +103,7 @@ else:  # pragma: no cover
     _user32 = None
     _kernel32 = None
     _gdi32 = None
+    _version = None
     _dwmapi = None
 
 
@@ -339,6 +341,26 @@ def _configure() -> None:
     _gdi32.DeleteDC.restype = wintypes.BOOL
     _gdi32.GdiFlush.argtypes = ()
     _gdi32.GdiFlush.restype = wintypes.BOOL
+
+    # Historial de programas: nombre del programa y AUMID de las apps de la Store.
+    _version.GetFileVersionInfoSizeW.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD))
+    _version.GetFileVersionInfoSizeW.restype = wintypes.DWORD
+    _version.GetFileVersionInfoW.argtypes = (
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p
+    )
+    _version.GetFileVersionInfoW.restype = wintypes.BOOL
+    _version.VerQueryValueW.argtypes = (
+        ctypes.c_void_p, wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(wintypes.UINT),
+    )
+    _version.VerQueryValueW.restype = wintypes.BOOL
+    try:
+        _kernel32.GetApplicationUserModelId.argtypes = (
+            wintypes.HANDLE, ctypes.POINTER(ctypes.c_uint32), wintypes.LPWSTR
+        )
+        _kernel32.GetApplicationUserModelId.restype = ctypes.c_long
+    except AttributeError:  # pragma: no cover - Windows 7
+        pass
 
     if _dwmapi is not None:
         _dwmapi.DwmGetWindowAttribute.argtypes = (
@@ -687,14 +709,14 @@ def window_icon(hwnd: int, ruta: str = "", tamano: int = 64):
     icono = 0
     propio = False
     nombre = os.path.splitext(os.path.basename(ruta))[0].lower() if ruta else ""
-    if ruta and nombre not in _EXE_ANFITRIONES:
+    if ruta and nombre not in _EXE_ANFITRIONES and os.path.isfile(ruta):
         hicon = wintypes.HICON()
         ident = wintypes.UINT()
         if _user32.PrivateExtractIconsW(
             ruta, 0, tamano, tamano, ctypes.byref(hicon), ctypes.byref(ident), 1, 0
         ) == 1 and hicon:
             icono, propio = hicon.value, True
-    if not icono:
+    if not icono and hwnd:
         icono = _icono_de_ventana(hwnd)
     if not icono:
         return None
@@ -744,6 +766,98 @@ def close_window(hwnd_id: int) -> dict:
     if not _user32.PostMessageW(hwnd_id, _WM_SYSCOMMAND, _SC_CLOSE, 0):
         return {"error": "Windows no dejo cerrar esa ventana"}
     return {"ok": True, "title": titulo, "id": hwnd_id}
+
+
+def exe_description(ruta: str) -> str:
+    """Nombre del programa segun su ejecutable ("Visual Studio Code", no "Code")."""
+    if not available() or not ruta:
+        return ""
+    try:
+        tamano = _version.GetFileVersionInfoSizeW(ruta, None)
+        if not tamano:
+            return ""
+        datos = ctypes.create_string_buffer(tamano)
+        if not _version.GetFileVersionInfoW(ruta, 0, tamano, datos):
+            return ""
+        puntero = ctypes.c_void_p()
+        largo = wintypes.UINT()
+        idiomas = []
+        if _version.VerQueryValueW(
+            datos, "\\VarFileInfo\\Translation", ctypes.byref(puntero), ctypes.byref(largo)
+        ) and largo.value >= 4:
+            pares = (ctypes.c_uint16 * (largo.value // 2)).from_address(puntero.value)
+            idiomas = [(pares[i], pares[i + 1]) for i in range(0, len(pares) - 1, 2)]
+        for idioma, pagina in idiomas + [(0x0409, 0x04B0), (0x0409, 0x04E4)]:
+            for campo in ("FileDescription", "ProductName"):
+                consulta = f"\\StringFileInfo\\{idioma:04x}{pagina:04x}\\{campo}"
+                if _version.VerQueryValueW(
+                    datos, consulta, ctypes.byref(puntero), ctypes.byref(largo)
+                ) and largo.value > 1:
+                    texto = ctypes.wstring_at(puntero.value, largo.value).rstrip("\0").strip()
+                    if texto:
+                        return texto[:80]
+    except Exception:
+        return ""
+    return ""
+
+
+def _aumid_de_ventana(hwnd) -> str:
+    """Identificador de app de la Store (AUMID) del proceso de una ventana."""
+    try:
+        pid = wintypes.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        handle = _kernel32.OpenProcess(0x1000, False, pid.value) if pid.value else None
+        if not handle:
+            return ""
+        try:
+            buffer = ctypes.create_unicode_buffer(256)
+            largo = ctypes.c_uint32(len(buffer))
+            if _kernel32.GetApplicationUserModelId(handle, ctypes.byref(largo), buffer) == 0:
+                return buffer.value
+        finally:
+            _kernel32.CloseHandle(handle)
+    except Exception:
+        pass
+    return ""
+
+
+def foreground_program() -> Optional[dict]:
+    """
+    Programa que tienes delante, si es de los de la barra de tareas:
+    {"hwnd", "path", "aumid", "title"} o None.
+    """
+    if not available():
+        return None
+    try:
+        hwnd = _raiz_activa()
+        if not hwnd or not _en_barra_de_tareas(hwnd):
+            return None
+        ruta = _ruta_exe(hwnd)
+        if not ruta:
+            return None
+        return {"hwnd": hwnd, "path": ruta, "aumid": _aumid_de_ventana(hwnd),
+                "title": _titulo(hwnd)}
+    except Exception:
+        return None
+
+
+def launch_program(ruta: str, aumid: str = "") -> dict:
+    """
+    Abre un programa del historial. Las apps de la Store se abren por su
+    AUMID (su .exe no se puede lanzar directamente); el resto, por su ruta.
+    """
+    if not available():
+        return {"error": "no disponible"}
+    try:
+        if aumid:
+            os.startfile("shell:AppsFolder\\" + aumid)
+        elif ruta and os.path.isfile(ruta):
+            os.startfile(ruta)
+        else:
+            return {"error": "ese programa ya no esta instalado"}
+    except OSError as error:
+        return {"error": f"Windows no pudo abrirlo ({error.strerror or error})"}
+    return {"ok": True}
 
 
 def focus_window(hwnd_id: int) -> dict:

@@ -56,6 +56,7 @@ class Servidor:
             "REMOTEPAD_TOKENS": str(self.tokens),
             "REMOTEPAD_PROFILES": str(carpeta / "profiles.json"),
             "REMOTEPAD_LEARNING": str(carpeta / "learning.json"),
+            "REMOTEPAD_HISTORY": str(carpeta / "history.json"),
             "REMOTEPAD_CONFIG": str(carpeta / "config.json"),
             "REMOTEPAD_SIN_VENTANAS": "1",
             "PYTHONIOENCODING": "utf-8",

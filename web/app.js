@@ -469,6 +469,12 @@ function handleMessage(message) {
         pintarDispositivos(message.d);
       } else if (message.a === 'windows_list' && message.d && !message.d.error) {
         pintarVentanas(message.d.windows, message.d.icons);
+      } else if (message.a === 'programs_history' && message.d && !message.d.error) {
+        pintarProgramas(message.d.programs, message.d.icons);
+      } else if (message.a === 'program_launch' && message.d && message.d.ok) {
+        toast('Abriendo: ' + (message.d.name || 'programa'), 1800);
+      } else if (message.a === 'program_forget' && message.d) {
+        // La fila ya se recogió; nada más que hacer.
       } else if (message.a === 'window_close' && message.d && message.d.ok) {
         toast('Cerrando: ' + (message.d.title || 'programa'), 1800);
       } else if (message.a === 'window_focus' && message.d && message.d.ok) {
@@ -1326,14 +1332,16 @@ function cerrarMenuVentana() {
 
 /* ------------------------------------------------- programas abiertos */
 function pedirVentanas() {
-  const lista = $('windows-list');
-  if (lista && !lista.children.length) {
-    const cargando = document.createElement('li');
-    cargando.className = 'ventanas-vacio';
-    cargando.textContent = 'Cargando…';
-    lista.append(cargando);
-  }
+  [$('windows-list'), $('programs-list')].forEach((lista) => {
+    if (lista && !lista.children.length) {
+      const cargando = document.createElement('li');
+      cargando.className = 'ventanas-vacio';
+      cargando.textContent = 'Cargando…';
+      lista.append(cargando);
+    }
+  });
   send('windows_list', {});
+  send('programs_history', {});
 }
 
 /* Un color estable por programa: así se reconocen de un vistazo. */
@@ -1343,80 +1351,128 @@ function colorDePrograma(nombre) {
   return `hsl(${h} 55% 42%)`;
 }
 
+function listaVacia(lista, texto) {
+  const vacio = document.createElement('li');
+  vacio.className = 'ventanas-vacio';
+  vacio.textContent = texto;
+  lista.append(vacio);
+}
+
+/* Una fila que se puede tocar o deslizar (programas abiertos e historial).
+   Todo lo que viene de la PC (títulos, nombres) se pinta con textContent. */
+function filaDeslizable(opciones) {
+  const item = document.createElement('li');
+  if (opciones.resaltada) item.className = 'activa';
+  const boton = document.createElement('button');
+  boton.type = 'button';
+
+  const letra = document.createElement('span');
+  letra.className = 'ventana-letra';
+  const icono = opciones.icono;
+  if (typeof icono === 'string' && icono.startsWith('data:image/png;base64,')) {
+    // El icono que tiene el programa en Windows.
+    const imagen = document.createElement('img');
+    imagen.src = icono;
+    imagen.alt = '';
+    letra.classList.add('con-icono');
+    letra.append(imagen);
+  } else {
+    // Sin icono: la inicial sobre un color propio del programa.
+    const base = opciones.clave || opciones.titulo || '?';
+    letra.textContent = base.charAt(0).toUpperCase();
+    letra.style.background = colorDePrograma(base);
+  }
+
+  const info = document.createElement('span');
+  info.className = 'ventana-info';
+  const titulo = document.createElement('span');
+  titulo.className = 'ventana-titulo';
+  titulo.textContent = opciones.titulo;
+  const detalle = document.createElement('span');
+  detalle.className = 'ventana-app';
+  detalle.textContent = opciones.detalle;
+  info.append(titulo, detalle);
+  boton.append(letra, info);
+
+  // Detrás de la fila: lo que pasará al soltar según hacia dónde se deslice.
+  const fondo = document.createElement('div');
+  fondo.className = 'ventana-fondo';
+  fondo.setAttribute('aria-hidden', 'true');
+  const derecha = document.createElement('span');
+  derecha.className = 'fondo-abrir';
+  derecha.textContent = opciones.textoDerecha;
+  const izquierda = document.createElement('span');
+  izquierda.className = 'fondo-cerrar';
+  izquierda.textContent = opciones.textoIzquierda;
+  fondo.append(derecha, izquierda);
+
+  item.append(fondo, boton);
+  deslizarFila(item, boton, opciones.alAbrir, opciones.alQuitar);
+  return item;
+}
+
 function pintarVentanas(ventanas, iconos) {
   const lista = $('windows-list');
   if (!lista || !Array.isArray(ventanas)) return;
   lista.replaceChildren();
   if (!ventanas.length) {
-    const vacio = document.createElement('li');
-    vacio.className = 'ventanas-vacio';
-    vacio.textContent = 'No hay programas abiertos.';
-    lista.append(vacio);
+    listaVacia(lista, 'No hay programas abiertos.');
     return;
   }
   ventanas.forEach((ventana) => {
-    const item = document.createElement('li');
-    if (ventana.active) item.className = 'activa';
-    const boton = document.createElement('button');
-    boton.type = 'button';
-
     const app = String(ventana.app || '');
-    const letra = document.createElement('span');
-    letra.className = 'ventana-letra';
-    const icono = iconos && ventana.icon != null ? iconos[ventana.icon] : '';
-    if (typeof icono === 'string' && icono.startsWith('data:image/png;base64,')) {
-      // El icono que tiene el programa en Windows.
-      const imagen = document.createElement('img');
-      imagen.src = icono;
-      imagen.alt = '';
-      letra.classList.add('con-icono');
-      letra.append(imagen);
-    } else {
-      // Sin icono: la inicial sobre un color propio del programa.
-      letra.textContent = (app || ventana.title || '?').charAt(0).toUpperCase();
-      letra.style.background = colorDePrograma(app || ventana.title || '');
-    }
-
-    const info = document.createElement('span');
-    info.className = 'ventana-info';
-    const titulo = document.createElement('span');
-    titulo.className = 'ventana-titulo';
-    titulo.textContent = ventana.title || app;
-    const detalle = document.createElement('span');
-    detalle.className = 'ventana-app';
     const estado = ventana.active ? ' · en pantalla' : (ventana.min ? ' · minimizado' : '');
-    detalle.textContent = app + estado;
-    info.append(titulo, detalle);
-
-    boton.append(letra, info);
-
-    // Detrás de la fila: lo que pasará al soltar según hacia dónde se deslice.
-    const fondo = document.createElement('div');
-    fondo.className = 'ventana-fondo';
-    fondo.setAttribute('aria-hidden', 'true');
-    const abrir = document.createElement('span');
-    abrir.className = 'fondo-abrir';
-    abrir.textContent = '▶ Abrir';
-    const cerrar = document.createElement('span');
-    cerrar.className = 'fondo-cerrar';
-    cerrar.textContent = 'Cerrar ✕';
-    fondo.append(abrir, cerrar);
-
-    item.append(fondo, boton);
-    lista.append(item);
-    deslizarVentana(item, boton, ventana);
+    lista.append(filaDeslizable({
+      icono: iconos && ventana.icon != null ? iconos[ventana.icon] : '',
+      clave: app || ventana.title,
+      titulo: ventana.title || app,
+      detalle: app + estado,
+      resaltada: ventana.active,
+      textoDerecha: '▶ Ver',
+      textoIzquierda: 'Cerrar ✕',
+      alAbrir: () => verVentana(ventana),
+      alQuitar: (item) => cerrarVentana(item, ventana),
+    }));
   });
 }
 
-/* Cada fila de «Programas abiertos» se puede tocar o deslizar:
-   tocar o deslizar a la derecha = verlo en la PC; a la izquierda = cerrarlo.
-   El scroll vertical de la lista sigue siendo del navegador (pan-y). */
-const DESLIZAR_UMBRAL = 0.33;   // fracción del ancho para que cuente
+function pintarProgramas(programas, iconos) {
+  const lista = $('programs-list');
+  if (!lista || !Array.isArray(programas)) return;
+  lista.replaceChildren();
+  if (!programas.length) {
+    listaVacia(lista, 'Aún no hay programas: se apuntan solos a medida que '
+      + 'los usas en la PC.');
+    return;
+  }
+  programas.forEach((programa) => {
+    lista.append(filaDeslizable({
+      icono: iconos && programa.icon != null ? iconos[programa.icon] : '',
+      clave: programa.app || programa.name,
+      titulo: programa.name || programa.app,
+      detalle: 'Usado ' + haceCuanto(programa.last),
+      textoDerecha: '▶ Abrir',
+      textoIzquierda: 'Quitar ✕',
+      alAbrir: () => abrirPrograma(programa),
+      alQuitar: (item) => olvidarPrograma(item, programa),
+    }));
+  });
+}
 
-function abrirVentana(ventana) {
+/* Las acciones no cierran el panel: así se pueden ver, abrir o cerrar varios
+   programas seguidos. La lista se refresca sola para mostrar el cambio. */
+let refrescoVentanas = null;
+function refrescarVentanas(ms) {
+  clearTimeout(refrescoVentanas);
+  refrescoVentanas = setTimeout(() => {
+    if (!sheets.windows.hidden) pedirVentanas();
+  }, ms);
+}
+
+function verVentana(ventana) {
   send('window_focus', { id: ventana.id });
   buzz(14);
-  closeSheets();
+  refrescarVentanas(600);
 }
 
 function cerrarVentana(item, ventana) {
@@ -1425,10 +1481,28 @@ function cerrarVentana(item, ventana) {
   item.classList.add('cerrando');
   // Si el programa pregunta «¿guardar?» no se cierra todavía: al refrescar
   // la lista vuelve a aparecer, que es lo que de verdad hay en la PC.
-  setTimeout(pedirVentanas, 900);
+  refrescarVentanas(900);
 }
 
-function deslizarVentana(item, boton, ventana) {
+function abrirPrograma(programa) {
+  send('program_launch', { id: programa.id });
+  buzz(14);
+  // Un programa tarda un poco en abrir su ventana.
+  refrescarVentanas(2000);
+}
+
+function olvidarPrograma(item, programa) {
+  send('program_forget', { id: programa.id });
+  buzz([12, 40, 12]);
+  item.classList.add('cerrando');
+}
+
+/* Cada fila se puede tocar o deslizar: tocar o deslizar a la derecha = la
+   acción principal; a la izquierda = cerrar o quitar. El scroll vertical de
+   la lista sigue siendo del navegador (pan-y). */
+const DESLIZAR_UMBRAL = 0.33;   // fracción del ancho para que cuente
+
+function deslizarFila(item, boton, alAbrir, alQuitar) {
   let inicio = null;      // { x, y, id }
   let dx = 0;
   let horizontal = false;
@@ -1474,10 +1548,10 @@ function deslizarVentana(item, boton, ventana) {
     boton.classList.add('volviendo');
     if (dx > umbral) {
       mover(0);
-      abrirVentana(ventana);
+      alAbrir();
     } else if (dx < -umbral) {
       boton.style.transform = `translateX(${-boton.offsetWidth}px)`;
-      cerrarVentana(item, ventana);
+      alQuitar(item);
     } else {
       mover(0);
     }
@@ -1493,7 +1567,7 @@ function deslizarVentana(item, boton, ventana) {
 
   boton.addEventListener('click', () => {
     if (deslizado) { deslizado = false; return; }
-    abrirVentana(ventana);
+    alAbrir();
   });
 }
 

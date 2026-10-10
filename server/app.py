@@ -56,6 +56,7 @@ except ImportError as exc:  # pragma: no cover
 import auth
 import certificado
 import qr
+import historial
 import learning
 import native_input
 from auth import (QR_GRACE_SECONDS, QR_VALID_SECONDS, device_name, load_config,
@@ -78,7 +79,7 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.14.0"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 16
@@ -535,6 +536,10 @@ class Gateway:
         self._app = ""
         self._app_check = 0.0
         self._learn_saved = 0.0
+        # Programas usados, para volver a abrirlos desde el celular.
+        self.historial = historial.Historial()
+        self._prog_hwnd = 0
+        self._prog_check = 0.0
 
         self.executor = ThreadPoolExecutor(
             max_workers=3, thread_name_prefix="input"
@@ -760,9 +765,40 @@ class Gateway:
             if app_actual != self._app:
                 self._app = app_actual
                 self.learning.ubicar(app_actual)
+        if ahora - self._prog_check >= 1.5:
+            self._prog_check = ahora
+            self.historial_tick()
         if ahora - self._learn_saved >= 60.0:
             self._learn_saved = ahora
             self.learning.guardar()
+            self.historial.guardar()
+
+    def historial_tick(self) -> None:
+        """
+        Apunta en el historial el programa que tienes delante cuando cambias de
+        ventana. El nombre y el icono solo se leen la primera vez.
+        """
+        try:
+            actual = self.controller.foreground_program()
+        except Exception:
+            actual = None
+        hwnd = actual["hwnd"] if actual else 0
+        if not actual or hwnd == self._prog_hwnd:
+            self._prog_hwnd = hwnd
+            return
+        self._prog_hwnd = hwnd
+        try:
+            ruta = actual["path"]
+            nombre = historial.nombre_de(
+                ruta, self.controller.program_name(ruta), actual.get("title", "")
+            )
+            clave = self.historial.anotar(ruta, actual.get("aumid", ""), nombre)
+            if clave and self.historial.necesita_icono(clave):
+                icono = self.controller.program_icon(ruta, hwnd)
+                if icono:
+                    self.historial.anotar(ruta, actual.get("aumid", ""), nombre, icono)
+        except Exception:
+            log.debug("historial: no se pudo anotar", exc_info=True)
 
     def _discard_stale(self) -> None:
         """
@@ -1140,6 +1176,30 @@ class Gateway:
                 self.executor, c.windows
             )
 
+        if action == "programs_history":
+            # Programas usados en la PC (sin rutas), para volver a abrirlos.
+            return self.historial.lista()
+
+        if action == "program_launch":
+            # Solo se abre lo que ya esta en el historial: el celular manda un
+            # id y la ruta la pone el servidor.
+            entrada = self.historial.buscar(str(data.get("id", "")))
+            if not entrada:
+                return {"error": "ese programa ya no esta en el historial"}
+            resultado = await asyncio.get_running_loop().run_in_executor(
+                self.executor,
+                lambda e=entrada: c.launch_program(e["path"], e.get("aumid", "")),
+            )
+            if resultado.get("ok"):
+                resultado["name"] = entrada["name"]
+                log.info("Abriendo %s desde %s", entrada["name"], client.addr)
+            return resultado
+
+        if action == "program_forget":
+            borrado = self.historial.quitar(str(data.get("id", "")))
+            self.historial.guardar()
+            return {"ok": borrado}
+
         if action == "window_close":
             hwnd = int(clamp_number(data.get("id"), 0, 2**63 - 1))
             return await asyncio.get_running_loop().run_in_executor(
@@ -1486,6 +1546,7 @@ class Gateway:
     async def shutdown(self) -> None:
         self.laser.stop()
         self.learning.guardar()
+        self.historial.guardar()
         self.controller.release_all()
         for client in list(self.clients):
             await self.stop_sender(client)

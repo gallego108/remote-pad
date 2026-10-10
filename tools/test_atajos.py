@@ -27,7 +27,8 @@ _TMP = Path(tempfile.mkdtemp(prefix="remotepad_atajos_"))
 for variable, archivo in (("REMOTEPAD_TOKENS", "tokens.json"),
                           ("REMOTEPAD_PROFILES", "profiles.json"),
                           ("REMOTEPAD_CONFIG", "config.json"),
-                          ("REMOTEPAD_LEARNING", "learning.json")):
+                          ("REMOTEPAD_LEARNING", "learning.json"),
+                          ("REMOTEPAD_HISTORY", "history.json")):
     os.environ.setdefault(variable, str(_TMP / archivo))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
 

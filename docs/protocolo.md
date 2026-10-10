@@ -79,6 +79,9 @@ token si ya tenía uno válido, sin crear otro acceso), y `auth_query` responde
 |---|---|---|
 | `windows_list` | `{}` | Programas abiertos, como en la barra de tareas y del más reciente al más antiguo: `{ windows: [{ id, title, app, min, active, icon? }], icons: { clave: "data:image/png;base64,…" } }`. Los iconos (64 px, con transparencia) van una sola vez aunque varias ventanas sean del mismo programa |
 | `window_focus` | `{ id }` | Trae al frente (y restaura si está minimizado) un programa de esa lista. Solo acepta ventanas que saldrían en la barra de tareas. Responde `{ ok, title, front }` o `{ error }` |
+| `programs_history` | `{}` | Programas usados en la PC, del más reciente al más antiguo: `{ programs: [{ id, name, app, last, icon? }], icons: { id: data_url } }`. Sin rutas |
+| `program_launch` | `{ id }` | Abre un programa del historial (las apps de la Store, por su AUMID). Solo acepta ids del historial: la ruta la pone el servidor. Responde `{ ok, name }` o `{ error }` |
+| `program_forget` | `{ id }` | Quita un programa del historial |
 | `window_close` | `{ id }` | Cierra un programa de esa lista (como su botón ✕: puede preguntar si guardar). Mismas reglas que `window_focus`, y nunca la consola de RemotePad. Responde `{ ok, title, id }` o `{ error }` |
 | `window` | `{ op }` | Ventana activa de la PC: `minimize`, `maximize` (si ya está maximizada, la restaura) o `close` (como su botón ✕: la aplicación puede preguntar si guardar). Responde `{ ok, title, done }` o `{ error }`. No toca el escritorio ni la barra de tareas y no cierra la consola de RemotePad |
 | `keep_awake` | `{ minutes }` | Anti-apagado: mueve el ratón 1 px cada 40 s (sin desplazarlo) durante `minutes`; `on: false` lo detiene |

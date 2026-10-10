@@ -58,6 +58,7 @@ class DesktopController:
         # mantener el PIN al dia aunque el celular este inactivo.
         self._pin_verifier = pin_verifier
         self._iconos = iconos.CacheIconos()
+        self._nombres: dict[str, str] = {}
 
         self._screen_w, self._screen_h = native_input.screen_size()
         self._monitors: list[dict] = native_input.monitors()
@@ -336,6 +337,27 @@ class DesktopController:
                 imagenes[clave] = url
                 ventana["icon"] = clave
         return {"windows": ventanas, "icons": imagenes}
+
+    # ------------------------------------------------- historial de programas
+    def foreground_program(self) -> Optional[dict]:
+        """Programa de la barra de tareas que tienes delante (o None)."""
+        return native_input.foreground_program()
+
+    def program_name(self, ruta: str) -> str:
+        """Nombre del programa segun su ejecutable (se recuerda por ruta)."""
+        if ruta not in self._nombres:
+            self._nombres[ruta] = native_input.exe_description(ruta)
+        return self._nombres[ruta]
+
+    def program_icon(self, ruta: str, hwnd: int = 0) -> Optional[str]:
+        """Icono del programa como data URL PNG (comparte la cache de la lista)."""
+        origen = ruta.lower() if ruta else f"ventana:{hwnd}"
+        return self._iconos.obtener(origen, lambda: native_input.window_icon(hwnd, ruta))
+
+    def launch_program(self, ruta: str, aumid: str = "") -> dict:
+        """Abre un programa del historial."""
+        self._check_pin()
+        return native_input.launch_program(ruta, aumid)
 
     def window_close(self, hwnd: int) -> dict:
         """Cierra uno de los programas abiertos."""
