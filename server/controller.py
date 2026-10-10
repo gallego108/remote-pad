@@ -310,6 +310,17 @@ class DesktopController:
         with self._lock:
             return native_input.window_action(op)
 
+    def windows(self) -> list:
+        """Programas abiertos (los de la barra de tareas)."""
+        self._check_pin()
+        return native_input.list_windows()
+
+    def window_focus(self, hwnd: int) -> dict:
+        """Trae al frente uno de los programas abiertos."""
+        self._check_pin()
+        with self._lock:
+            return native_input.focus_window(hwnd)
+
     def clipboard_text(self) -> str:
         """Texto del portapapeles de la PC (para enviarlo al celular)."""
         self._check_pin()

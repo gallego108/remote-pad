@@ -93,9 +93,14 @@ MEDIA_KEYS = {
 if IS_WINDOWS:
     _user32 = ctypes.windll.user32
     _kernel32 = ctypes.windll.kernel32
+    try:
+        _dwmapi = ctypes.windll.dwmapi
+    except OSError:  # pragma: no cover
+        _dwmapi = None
 else:  # pragma: no cover
     _user32 = None
     _kernel32 = None
+    _dwmapi = None
 
 
 class _MOUSEINPUT(ctypes.Structure):
@@ -149,6 +154,8 @@ _MONITORENUMPROC = ctypes.WINFUNCTYPE(
     wintypes.LPARAM,
 )
 MONITORINFOF_PRIMARY = 0x1
+
+_WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
 
 def _configure() -> None:
@@ -254,6 +261,35 @@ def _configure() -> None:
     _user32.GetAncestor.restype = wintypes.HWND
     _kernel32.GetConsoleWindow.argtypes = ()
     _kernel32.GetConsoleWindow.restype = wintypes.HWND
+
+    # Lista de programas abiertos y traer uno al frente.
+    _user32.EnumWindows.argtypes = (_WNDENUMPROC, wintypes.LPARAM)
+    _user32.EnumWindows.restype = wintypes.BOOL
+    _user32.IsWindow.argtypes = (wintypes.HWND,)
+    _user32.IsWindow.restype = wintypes.BOOL
+    _user32.IsWindowVisible.argtypes = (wintypes.HWND,)
+    _user32.IsWindowVisible.restype = wintypes.BOOL
+    _user32.IsIconic.argtypes = (wintypes.HWND,)
+    _user32.IsIconic.restype = wintypes.BOOL
+    _user32.GetWindow.argtypes = (wintypes.HWND, wintypes.UINT)
+    _user32.GetWindow.restype = wintypes.HWND
+    _user32.GetWindowLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int)
+    _user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+    _user32.GetWindowTextLengthW.argtypes = (wintypes.HWND,)
+    _user32.GetWindowTextLengthW.restype = ctypes.c_int
+    _user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+    _user32.SetForegroundWindow.restype = wintypes.BOOL
+    _user32.BringWindowToTop.argtypes = (wintypes.HWND,)
+    _user32.BringWindowToTop.restype = wintypes.BOOL
+    _user32.AttachThreadInput.argtypes = (wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
+    _user32.AttachThreadInput.restype = wintypes.BOOL
+    _kernel32.GetCurrentThreadId.argtypes = ()
+    _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+    if _dwmapi is not None:
+        _dwmapi.DwmGetWindowAttribute.argtypes = (
+            wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD
+        )
+        _dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
 
 
 _configure()
@@ -371,6 +407,14 @@ def foreground_app() -> str:
         hwnd = _user32.GetForegroundWindow()
         if not hwnd:
             return ""
+        return _exe_de_ventana(hwnd)
+    except Exception:
+        return ""
+
+
+def _exe_de_ventana(hwnd) -> str:
+    """Nombre del ejecutable (sin ruta ni extension) dueno de una ventana."""
+    try:
         pid = wintypes.DWORD()
         _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         if not pid.value:
@@ -457,6 +501,132 @@ def window_action(op: str) -> dict:
     if not ok:
         return {"error": "Windows no dejo cambiar esa ventana"}
     return {"ok": True, "title": titulo.value, "done": hecho}
+
+
+_GW_OWNER = 4
+_GWL_EXSTYLE = -20
+_WS_EX_TOOLWINDOW = 0x00000080
+_WS_EX_APPWINDOW = 0x00040000
+_WS_EX_NOACTIVATE = 0x08000000
+_DWMWA_CLOAKED = 14
+_VK_ALT = 0x12
+MAX_VENTANAS = 60
+
+
+def _en_barra_de_tareas(hwnd) -> bool:
+    """
+    Las mismas reglas que usa la barra de tareas (y Alt+Tab) para mostrar una
+    ventana: visible, con titulo, sin dueno (o marcada como ventana de
+    aplicacion), que no sea de herramientas y que no este "oculta" por DWM
+    (apps de la tienda suspendidas o ventanas de otro escritorio virtual).
+    """
+    if not _user32.IsWindowVisible(hwnd):
+        return False
+    if _user32.GetWindowTextLengthW(hwnd) <= 0:
+        return False
+    estilo = _user32.GetWindowLongPtrW(hwnd, _GWL_EXSTYLE)
+    if estilo & _WS_EX_TOOLWINDOW:
+        return False
+    if _user32.GetWindow(hwnd, _GW_OWNER) and not estilo & _WS_EX_APPWINDOW:
+        return False
+    if estilo & _WS_EX_NOACTIVATE and not estilo & _WS_EX_APPWINDOW:
+        return False
+    if _dwmapi is not None:
+        oculta = wintypes.DWORD()
+        if _dwmapi.DwmGetWindowAttribute(
+            hwnd, _DWMWA_CLOAKED, ctypes.byref(oculta), ctypes.sizeof(oculta)
+        ) == 0 and oculta.value:
+            return False
+    clase = ctypes.create_unicode_buffer(256)
+    _user32.GetClassNameW(hwnd, clase, len(clase))
+    return clase.value not in _VENTANAS_SISTEMA
+
+
+def _titulo(hwnd) -> str:
+    longitud = _user32.GetWindowTextLengthW(hwnd)
+    buffer = ctypes.create_unicode_buffer(min(max(longitud, 0), 300) + 1)
+    _user32.GetWindowTextW(hwnd, buffer, len(buffer))
+    return buffer.value
+
+
+def _raiz_activa() -> int:
+    activa = _user32.GetForegroundWindow()
+    if not activa:
+        return 0
+    return int(_user32.GetAncestor(activa, _GA_ROOT) or activa)
+
+
+def list_windows() -> list[dict]:
+    """
+    Programas abiertos, como en la barra de tareas, del usado mas
+    recientemente al mas antiguo (orden Z).
+    Cada uno: {"id", "title", "app", "min", "active"}.
+    """
+    if not available():
+        return []
+    activa = _raiz_activa()
+    encontradas: list[int] = []
+
+    def _una(hwnd, _lparam):
+        try:
+            if _en_barra_de_tareas(hwnd):
+                encontradas.append(int(hwnd))
+        except Exception:
+            pass
+        return len(encontradas) < MAX_VENTANAS
+
+    _user32.EnumWindows(_WNDENUMPROC(_una), 0)
+    return [
+        {
+            "id": hwnd,
+            "title": _titulo(hwnd),
+            "app": _exe_de_ventana(hwnd),
+            "min": bool(_user32.IsIconic(hwnd)),
+            "active": hwnd == activa,
+        }
+        for hwnd in encontradas
+    ]
+
+
+def focus_window(hwnd_id: int) -> dict:
+    """
+    Trae al frente una ventana de la lista (y la restaura si esta minimizada).
+
+    Solo se aceptan ventanas que saldrian en la barra de tareas: el celular no
+    puede activar ventanas ocultas ni del sistema. Windows impide que un
+    proceso en segundo plano robe el foco, asi que se prueba primero de forma
+    normal, despues uniendo la entrada con el hilo de la ventana activa y,
+    como ultimo recurso, tras una pulsacion de Alt (que habilita el cambio).
+    """
+    if not available():
+        return {"error": "no disponible"}
+    if not hwnd_id or not _user32.IsWindow(hwnd_id) or not _en_barra_de_tareas(hwnd_id):
+        return {"error": "esa ventana ya no esta abierta"}
+
+    if _user32.IsIconic(hwnd_id):
+        _user32.ShowWindowAsync(hwnd_id, _SW_RESTORE)
+
+    def _al_frente() -> bool:
+        return _raiz_activa() == hwnd_id
+
+    _user32.SetForegroundWindow(hwnd_id)
+    if not _al_frente():
+        activa = _user32.GetForegroundWindow()
+        hilo_activo = _user32.GetWindowThreadProcessId(activa, None) if activa else 0
+        propio = _kernel32.GetCurrentThreadId()
+        unido = bool(hilo_activo) and hilo_activo != propio and bool(
+            _user32.AttachThreadInput(propio, hilo_activo, True)
+        )
+        try:
+            _user32.BringWindowToTop(hwnd_id)
+            _user32.SetForegroundWindow(hwnd_id)
+        finally:
+            if unido:
+                _user32.AttachThreadInput(propio, hilo_activo, False)
+    if not _al_frente():
+        tap_key(_VK_ALT)
+        _user32.SetForegroundWindow(hwnd_id)
+    return {"ok": True, "title": _titulo(hwnd_id), "front": _al_frente()}
 
 
 def left_button_is_down() -> bool:

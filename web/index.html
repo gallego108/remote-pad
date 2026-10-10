@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.9.0">
+<link rel="stylesheet" href="styles.css?v=1.10.0">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.9.0';
+const REMOTEPAD_WEB = '1.10.0';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -147,6 +147,10 @@ const REMOTEPAD_WEB = '1.9.0';
   </nav>
 
   <div id="win-menu" class="win-menu" role="menu" hidden>
+    <button class="win-op" data-win="list" role="menuitem">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="13" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 18h11a2 2 0 0 0 2-2V9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span>Programas abiertos…</span>
+    </button>
     <button class="win-op" data-win="minimize" role="menuitem">
       <svg viewBox="0 0 24 24"><path d="M5 18h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
       <span>Minimizar</span>
@@ -169,6 +173,7 @@ const REMOTEPAD_WEB = '1.9.0';
     <button class="tool" data-panel="gamepad"><span>🎮</span>Mando</button>
     <button class="tool" data-panel="settings"><span>⚙️</span>Ajustes</button>
     <button class="tool" data-panel="help"><span>❓</span>Ayuda</button>
+    <button class="tool" data-panel="windows"><span>🗂️</span>Programas</button>
   </nav>
 </main>
 
@@ -453,6 +458,19 @@ const REMOTEPAD_WEB = '1.9.0';
   </div>
 </section>
 
+<!-- ======================= PROGRAMAS ABIERTOS ======================= -->
+<section class="sheet" id="sheet-windows" hidden>
+  <header><h2>Programas abiertos</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <p class="tiny">Toca uno para verlo en la pantalla de la PC (si está
+    minimizado, se restaura).</p>
+    <div class="sheet-actions">
+      <button class="key" id="windows-refresh">⟳ Actualizar lista</button>
+    </div>
+    <ul class="ventanas" id="windows-list"><li class="ventanas-vacio">Cargando…</li></ul>
+  </div>
+</section>
+
 <!-- ============================ AYUDA ============================ -->
 <section class="sheet" id="sheet-help" hidden>
   <header><h2>Ayuda y guía de uso</h2><button class="close" data-close>✕</button></header>
@@ -484,6 +502,11 @@ const REMOTEPAD_WEB = '1.9.0';
     <p>El botón <b>Ventana</b> abre un menú para <b>minimizar</b>,
     <b>maximizar</b> (o restaurar, si ya lo está) o <b>cerrar</b> la ventana
     activa de la PC, como los botones de su barra de título.</p>
+
+    <h3>Programas abiertos</h3>
+    <p>El botón <b>🗂️ Programas</b> (o <b>Ventana → Programas abiertos</b>)
+    muestra los programas de la barra de tareas de la PC. Toca uno y se pone
+    delante en la pantalla, aunque estuviera minimizado.</p>
 
     <h3>Precisión</h3>
     <p>Si mueves el dedo <b>muy despacio</b>, el puntero avanza menos que el
@@ -620,7 +643,7 @@ const REMOTEPAD_WEB = '1.9.0';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.9.0"></script>
+<script src="app.js?v=1.10.0"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero

@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 1.10.0
+
+- **Programas abiertos.** Nuevo panel **🗂️ Programas** (también en el botón
+  **Ventana → Programas abiertos…**) con la lista de programas de la barra de
+  tareas de la PC: título, programa y si está minimizado o en pantalla. Al
+  tocar uno se pone delante en la pantalla de la PC (y se restaura si estaba
+  minimizado). Solo se pueden activar ventanas que salen en la barra de
+  tareas.
+
 ## 1.9.0
 
 - **Botón «Ventana».** Nuevo botón en la barra rápida que, al pulsarlo, muestra

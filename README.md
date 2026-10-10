@@ -165,7 +165,9 @@ Además:
 
 Los botones **Clic izq. / Clic der. / Ventana / Soltar / Reconectar** están
 siempre a la vista. **Ventana** abre un menú para minimizar, maximizar (o
-restaurar) o cerrar la ventana activa de la PC. El botón de la barra superior (**Puntero**) hace de interruptor maestro
+restaurar) o cerrar la ventana activa de la PC, y **Programas abiertos…**,
+que lista los programas de la barra de tareas para poner delante el que
+toques (también desde el botón **🗂️ Programas** de la barra inferior). El botón de la barra superior (**Puntero**) hace de interruptor maestro
 para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 
 ### Paneles inferiores

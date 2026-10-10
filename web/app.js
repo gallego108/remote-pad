@@ -65,6 +65,7 @@ const sheets = {
   media: $('sheet-media'),
   presentation: $('sheet-presentation'),
   gamepad: $('sheet-gamepad'),
+  windows: $('sheet-windows'),
   settings: $('sheet-settings'),
   help: $('sheet-help'),
 };
@@ -466,6 +467,10 @@ function handleMessage(message) {
       } else if ((message.a === 'devices_list' || message.a === 'device_revoke'
                   || message.a === 'set_confirm') && message.d && !message.d.error) {
         pintarDispositivos(message.d);
+      } else if (message.a === 'windows_list' && message.d && !message.d.error) {
+        pintarVentanas(message.d.windows);
+      } else if (message.a === 'window_focus' && message.d && message.d.ok) {
+        toast('En pantalla: ' + (message.d.title || 'programa'), 1800);
       } else if (message.a === 'window' && message.d && message.d.ok) {
         const titulo = message.d.title ? ': ' + message.d.title : '';
         toast((VENTANA_HECHO[message.d.done] || 'Hecho') + titulo, 1800);
@@ -1317,6 +1322,70 @@ function cerrarMenuVentana() {
   el.winBtn.setAttribute('aria-expanded', 'false');
 }
 
+/* ------------------------------------------------- programas abiertos */
+function pedirVentanas() {
+  const lista = $('windows-list');
+  if (lista && !lista.children.length) {
+    const cargando = document.createElement('li');
+    cargando.className = 'ventanas-vacio';
+    cargando.textContent = 'Cargando…';
+    lista.append(cargando);
+  }
+  send('windows_list', {});
+}
+
+/* Un color estable por programa: así se reconocen de un vistazo. */
+function colorDePrograma(nombre) {
+  let h = 0;
+  for (const letra of nombre) h = (h * 31 + letra.charCodeAt(0)) % 360;
+  return `hsl(${h} 55% 42%)`;
+}
+
+function pintarVentanas(ventanas) {
+  const lista = $('windows-list');
+  if (!lista || !Array.isArray(ventanas)) return;
+  lista.replaceChildren();
+  if (!ventanas.length) {
+    const vacio = document.createElement('li');
+    vacio.className = 'ventanas-vacio';
+    vacio.textContent = 'No hay programas abiertos.';
+    lista.append(vacio);
+    return;
+  }
+  ventanas.forEach((ventana) => {
+    const item = document.createElement('li');
+    if (ventana.active) item.className = 'activa';
+    const boton = document.createElement('button');
+    boton.type = 'button';
+
+    const app = String(ventana.app || '');
+    const letra = document.createElement('span');
+    letra.className = 'ventana-letra';
+    letra.textContent = (app || ventana.title || '?').charAt(0).toUpperCase();
+    letra.style.background = colorDePrograma(app || ventana.title || '');
+
+    const info = document.createElement('span');
+    info.className = 'ventana-info';
+    const titulo = document.createElement('span');
+    titulo.className = 'ventana-titulo';
+    titulo.textContent = ventana.title || app;
+    const detalle = document.createElement('span');
+    detalle.className = 'ventana-app';
+    const estado = ventana.active ? ' · en pantalla' : (ventana.min ? ' · minimizado' : '');
+    detalle.textContent = app + estado;
+    info.append(titulo, detalle);
+
+    boton.append(letra, info);
+    boton.addEventListener('click', () => {
+      send('window_focus', { id: ventana.id });
+      buzz(14);
+      closeSheets();
+    });
+    item.append(boton);
+    lista.append(item);
+  });
+}
+
 const VENTANA_HECHO = {
   minimized: 'Minimizada',
   maximized: 'Maximizada',
@@ -1343,6 +1412,7 @@ function openSheet(name) {
     send('devices_list', {});
   }
   if (name === 'shortcuts') send('monitor_list', {});
+  if (name === 'windows') pedirVentanas();
   if (name === 'help') {
     const acerca = $('help-about');
     if (acerca) {
@@ -2272,11 +2342,13 @@ function bindUI() {
   // --- menú «Ventana»: minimizar, maximizar o cerrar la ventana activa
   document.querySelectorAll('[data-win]').forEach((button) => {
     button.addEventListener('click', () => {
-      send('window', { op: button.dataset.win });
       cerrarMenuVentana();
       buzz(14);
+      if (button.dataset.win === 'list') openSheet('windows');
+      else send('window', { op: button.dataset.win });
     });
   });
+  $('windows-refresh').addEventListener('click', pedirVentanas);
   // Tocar fuera del menú lo cierra (sin que ese toque haga nada más).
   document.addEventListener('pointerdown', (event) => {
     if (el.winMenu.hidden) return;

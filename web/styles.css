@@ -302,7 +302,7 @@ body { user-select: none; -webkit-user-select: none; }
   border-top: 1px solid var(--line);
 }
 .quickbar { grid-template-columns: repeat(5, 1fr); }
-/* 7 paneles: dos filas de 4. */
+/* 8 paneles: dos filas de 4. */
 .toolbar {
   grid-template-columns: repeat(4, 1fr);
   padding-bottom: calc(8px + var(--safe-b));
@@ -605,6 +605,52 @@ textarea#kb-text:focus { border-color: var(--accent); }
 }
 .pasos .tipo-paso { color: var(--accent); }
 .pasos .key { padding: 8px 0; }
+
+/* Programas abiertos: cada fila es un botón grande, fácil de tocar. */
+.ventanas {
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.ventanas li { min-width: 0; }
+.ventanas button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.ventanas button:active { background: var(--surface-2); }
+.ventanas .activa button { border-color: var(--accent); }
+.ventanas .ventana-letra {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-weight: 700;
+  color: #fff;
+}
+.ventanas .ventana-info { flex: 1 1 auto; min-width: 0; }
+.ventanas .ventana-titulo {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .9rem;
+}
+.ventanas .ventana-app { display: block; color: var(--muted); font-size: .74rem; }
+.ventanas .ventanas-vacio { color: var(--muted); font-size: .86rem; }
 
 /* Lista de dispositivos con acceso (Ajustes). */
 .devices {

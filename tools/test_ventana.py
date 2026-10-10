@@ -1,5 +1,6 @@
 """
-Pruebas del boton "Ventana" (minimizar, maximizar/restaurar, cerrar).
+Pruebas del boton "Ventana" (minimizar, maximizar/restaurar, cerrar) y de
+la lista de programas abiertos.
 
   A) native_input.window_action con la API de Windows simulada: no toca
      ninguna ventana de verdad.
@@ -9,7 +10,10 @@ Pruebas del boton "Ventana" (minimizar, maximizar/restaurar, cerrar).
      - el escritorio, la barra de tareas y la consola de RemotePad no se
        cierran;
      - una operacion desconocida se rechaza.
-  B) Protocolo: una operacion no valida devuelve error (no mueve nada).
+  C) Programas abiertos (API simulada): solo salen las ventanas que
+     estarian en la barra de tareas, y solo esas se pueden traer al frente.
+  B) Protocolo: una operacion no valida devuelve error (no mueve nada); la
+     lista de programas llega con su formato; un id invalido se rechaza.
 
 Uso:
     python tools/test_ventana.py                      # A
@@ -84,6 +88,9 @@ class User32Falso:
 
 
 class Kernel32Falso:
+    def GetCurrentThreadId(self):
+        return 1
+
     def GetConsoleWindow(self):
         return CONSOLA
 
@@ -152,6 +159,113 @@ def prueba_nativa() -> None:
     check("Operacion desconocida se rechaza", "error" in r and not u.mensajes)
 
 
+WS_EX_TOOLWINDOW = 0x80
+WS_EX_APPWINDOW = 0x40000
+
+
+class EscritorioFalso(User32Falso):
+    """Varias ventanas con distintas propiedades, para list_windows."""
+
+    def __init__(self):
+        super().__init__(hwnd=10)
+        # hwnd: (visible, titulo, estilo_ex, dueno, clase)
+        self.ventanas = {
+            10: (True, "Documento - Word", 0, 0, "OpusApp"),
+            11: (False, "Oculta", 0, 0, "X"),
+            12: (True, "", 0, 0, "X"),
+            13: (True, "Paleta", WS_EX_TOOLWINDOW, 0, "X"),
+            14: (True, "Dialogo", 0, 10, "#32770"),
+            15: (True, "Dialogo de app", WS_EX_APPWINDOW, 10, "#32770"),
+            16: (True, "Program Manager", 0, 0, "Progman"),
+            17: (True, "Chrome", 0, 0, "Chrome_WidgetWin_1"),
+        }
+        self.minimizadas = {17}
+        self.al_frente: list[int] = []
+
+    def EnumWindows(self, callback, lparam):
+        for hwnd in self.ventanas:
+            if not callback(hwnd, lparam):
+                break
+        return True
+
+    def IsWindow(self, hwnd):
+        return hwnd in self.ventanas
+
+    def IsWindowVisible(self, hwnd):
+        return self.ventanas[hwnd][0]
+
+    def GetWindowTextLengthW(self, hwnd):
+        return len(self.ventanas[hwnd][1])
+
+    def GetWindowTextW(self, hwnd, buffer, n):
+        buffer.value = self.ventanas[hwnd][1]
+        return len(buffer.value)
+
+    def GetWindowLongPtrW(self, hwnd, indice):
+        return self.ventanas[hwnd][2]
+
+    def GetWindow(self, hwnd, cmd):
+        return self.ventanas[hwnd][3]
+
+    def GetClassNameW(self, hwnd, buffer, n):
+        buffer.value = self.ventanas[hwnd][4]
+        return len(buffer.value)
+
+    def IsIconic(self, hwnd):
+        return hwnd in self.minimizadas
+
+    def ShowWindowAsync(self, hwnd, cmd):
+        self.minimizadas.discard(hwnd)
+        return True
+
+    def SetForegroundWindow(self, hwnd):
+        self.al_frente.append(hwnd)
+        self.hwnd = hwnd
+        return True
+
+    def GetWindowThreadProcessId(self, hwnd, pid):
+        return 0
+
+
+def con_escritorio(escritorio: EscritorioFalso, funcion, *args):
+    originales = (native_input._user32, native_input._kernel32,
+                  native_input._dwmapi, native_input.IS_WINDOWS,
+                  native_input._exe_de_ventana)
+    native_input._user32 = escritorio
+    native_input._kernel32 = Kernel32Falso()
+    native_input._dwmapi = None
+    native_input.IS_WINDOWS = True
+    native_input._exe_de_ventana = lambda hwnd: f"app{hwnd}"
+    try:
+        return funcion(*args)
+    finally:
+        (native_input._user32, native_input._kernel32, native_input._dwmapi,
+         native_input.IS_WINDOWS, native_input._exe_de_ventana) = originales
+
+
+def prueba_programas() -> None:
+    print("\n== C) Programas abiertos (API de Windows simulada) ==")
+    e = EscritorioFalso()
+    lista = con_escritorio(e, native_input.list_windows)
+    ids = [v["id"] for v in lista]
+    check("Solo las ventanas de la barra de tareas", ids == [10, 15, 17], str(ids))
+    check("Marca la activa", [v["active"] for v in lista] == [True, False, False])
+    check("Marca la minimizada", [v["min"] for v in lista] == [False, False, True])
+    check("Titulo y programa", lista[0]["title"] == "Documento - Word"
+          and lista[0]["app"] == "app10", str(lista[0]))
+
+    e = EscritorioFalso()
+    r = con_escritorio(e, native_input.focus_window, 17)
+    check("Trae al frente la elegida y la restaura",
+          r.get("ok") and r.get("front") and e.al_frente == [17] and 17 not in e.minimizadas,
+          str(r))
+    for hwnd, motivo in ((11, "oculta"), (13, "de herramientas"), (16, "el escritorio"),
+                         (99, "inexistente"), (0, "id 0")):
+        e = EscritorioFalso()
+        r = con_escritorio(e, native_input.focus_window, hwnd)
+        check(f"No activa una ventana {motivo}", "error" in r and not e.al_frente)
+
+
 async def prueba_protocolo(puerto: int, pin: str) -> None:
     import aiohttp
 
@@ -169,6 +283,22 @@ async def prueba_protocolo(puerto: int, pin: str) -> None:
                 break
         check("Una operacion no valida devuelve error", "error" in mensaje.get("d", {}),
               str(mensaje))
+
+        async def respuesta(accion: str) -> dict:
+            while True:
+                m = json.loads((await ws.receive(timeout=5)).data)
+                if m.get("t") == "response" and m.get("a") == accion:
+                    return m.get("d", {})
+
+        await ws.send_str(json.dumps({"a": "windows_list", "d": {}}))
+        datos = await respuesta("windows_list")
+        ventanas = datos.get("windows")
+        check("windows_list devuelve una lista", isinstance(ventanas, list), str(datos)[:200])
+        check("Cada programa trae id, titulo y app",
+              all({"id", "title", "app", "min", "active"} <= set(v) for v in ventanas or []))
+        await ws.send_str(json.dumps({"a": "window_focus", "d": {"id": "nada"}}))
+        check("window_focus con un id invalido se rechaza",
+              "error" in await respuesta("window_focus"))
         await ws.close()
 
 
@@ -179,6 +309,7 @@ def main() -> int:
     args = parser.parse_args()
 
     prueba_nativa()
+    prueba_programas()
     if args.port and args.pin:
         asyncio.run(prueba_protocolo(args.port, args.pin))
 
