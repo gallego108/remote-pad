@@ -139,6 +139,8 @@ const state = {
   authRequired: true,       // la PC pide PIN/QR (lo dice el servidor)
   fast: false,              // modo rapido: el puntero va FAST_FACTOR veces mas
   laser: false,             // puntero laser: la pantalla solo senala
+  deviceId: '',             // codigo corto de este dispositivo en la PC
+  olvidando: false,         // el usuario pidio "Olvidar este dispositivo"
 };
 
 /* ------------------------------------------------------------ utilidades */
@@ -302,6 +304,7 @@ function handleMessage(message) {
         if (message.token) {
           try { localStorage.setItem(TOKEN_KEY, message.token); } catch (_) {}
         }
+        if (message.device) state.deviceId = message.device;
         if (Array.isArray(message.screen) && message.screen.length === 2) {
           state.screen = { w: message.screen[0], h: message.screen[1] };
         }
@@ -385,6 +388,28 @@ function handleMessage(message) {
       buzz([40, 60, 40]);
       break;
 
+    case 'revoked':
+      // La PC ha retirado el acceso de este dispositivo (desde Ajustes de
+      // otro celular, desde la consola o con "Olvidar este dispositivo").
+      try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+      state.authorized = false;
+      closeSheets();
+      el.app.hidden = true;
+      el.auth.hidden = false;
+      el.authError.textContent = state.olvidando
+        ? 'Dispositivo olvidado: escanea el QR o escribe el PIN para volver.'
+        : 'Se ha retirado el acceso de este dispositivo. Para volver, escanea '
+          + 'el QR o escribe el PIN.';
+      el.authError.hidden = false;
+      state.olvidando = false;
+      break;
+
+    case 'device_new':
+      // Ha entrado otro dispositivo: si no lo esperabas, puedes quitarlo en
+      // Ajustes.
+      toast('Nuevo dispositivo con acceso: ' + (message.nombre || '¿?'), 3200);
+      break;
+
     case 'pin':
       state.serverPin = message.pin;
       el.pinChip.textContent = message.pin;
@@ -411,6 +436,9 @@ function handleMessage(message) {
           : 'El PC no tenía nada copiado');
       } else if (message.a === 'learning' && message.d) {
         pintarAprendizaje(message.d);
+      } else if ((message.a === 'devices_list' || message.a === 'device_revoke'
+                  || message.a === 'set_confirm') && message.d && !message.d.error) {
+        pintarDispositivos(message.d);
       } else if (message.d && message.d.error) {
         toast('No se pudo: ' + message.d.error);
       }
@@ -1131,7 +1159,10 @@ function openSheet(name) {
     const hint = $('dict-hint');
     if (hint) hint.hidden = true;
   }
-  if (name === 'settings') refreshSettingsUI();
+  if (name === 'settings') {
+    refreshSettingsUI();
+    send('devices_list', {});
+  }
   if (name === 'help') {
     const acerca = $('help-about');
     if (acerca) {
@@ -1145,6 +1176,92 @@ function closeSheets() {
   Object.values(sheets).forEach((sheet) => { sheet.hidden = true; });
   el.backdrop.hidden = true;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+
+/* ------------------------------------------------- dispositivos con acceso */
+function haceCuanto(segundosEpoch) {
+  const diferencia = Math.max(0, Date.now() / 1000 - Number(segundosEpoch || 0));
+  if (diferencia < 90) return 'ahora';
+  if (diferencia < 3600) return `hace ${Math.round(diferencia / 60)} min`;
+  if (diferencia < 86400) return `hace ${Math.round(diferencia / 3600)} h`;
+  const dias = Math.round(diferencia / 86400);
+  return dias === 1 ? 'hace 1 día' : `hace ${dias} días`;
+}
+
+/* Los nombres vienen del User-Agent de cada navegador: se pintan siempre con
+   textContent, nunca como HTML. */
+function pintarDispositivos(datos) {
+  const casilla = $('s-confirm');
+  if (casilla && typeof datos.confirmar === 'boolean') casilla.checked = datos.confirmar;
+  if (datos.ok && datos.nombre) toast('Acceso retirado: ' + datos.nombre, 2400);
+
+  const lista = $('devices-list');
+  const filas = Array.isArray(datos.dispositivos) ? datos.dispositivos : null;
+  if (!lista || !filas) return;
+  lista.replaceChildren();
+  if (!filas.length) {
+    const vacio = document.createElement('li');
+    vacio.className = 'devices-empty';
+    vacio.textContent = 'Ningún dispositivo tiene acceso.';
+    lista.append(vacio);
+    return;
+  }
+  filas.forEach((fila) => {
+    const item = document.createElement('li');
+    const info = document.createElement('div');
+    info.className = 'device-info';
+
+    const nombre = document.createElement('span');
+    nombre.className = 'device-name';
+    nombre.textContent = fila.nombre || 'Dispositivo';
+    const etiqueta = fila.actual ? 'este' : (fila.conectado ? 'conectado' : '');
+    if (etiqueta) {
+      const marca = document.createElement('span');
+      marca.className = 'device-tag';
+      marca.textContent = etiqueta;
+      nombre.append(marca);
+    }
+    const detalle = document.createElement('span');
+    detalle.className = 'device-meta';
+    detalle.textContent = `${fila.addr || 'sin dirección'} · ${haceCuanto(fila.visto)}`;
+    info.append(nombre, detalle);
+
+    const quitar = document.createElement('button');
+    quitar.className = 'key danger';
+    quitar.type = 'button';
+    quitar.textContent = 'Quitar';
+    quitar.addEventListener('click', () => {
+      if (fila.actual) {
+        olvidarEsteDispositivo();
+        return;
+      }
+      if (!window.confirm(`¿Quitar el acceso a «${fila.nombre}»?\n\n`
+          + 'Se desconectará y tendrá que volver a escanear el QR o escribir el PIN.')) {
+        return;
+      }
+      send('device_revoke', { id: fila.id });
+    });
+    item.append(info, quitar);
+    lista.append(item);
+  });
+}
+
+/* "Olvidar este dispositivo": se retira tambien el acceso en la PC (no solo
+   en el celular), para que el token no quede valido en ningun sitio. */
+function olvidarEsteDispositivo() {
+  if (!window.confirm('¿Olvidar este dispositivo?\n\nPara volver a entrar habrá '
+      + 'que escanear el QR o escribir el PIN.')) {
+    return;
+  }
+  state.olvidando = true;
+  if (state.deviceId && send('device_revoke', { id: state.deviceId })) {
+    return;   // el servidor responde con "revoked" y cierra la conexion
+  }
+  try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+  state.authorized = false;
+  closeSheets();
+  toast('Dispositivo olvidado: pide el PIN de nuevo', 2400);
+  try { state.ws.close(); } catch (_) {}
 }
 
 /* ------------------------------------------------------------ tutorial */
@@ -1662,12 +1779,10 @@ function bindUI() {
     } catch (_) { toast('Tu navegador no permite pantalla completa'); }
   });
 
-  $('btn-logout').addEventListener('click', () => {
-    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
-    state.authorized = false;
-    closeSheets();
-    toast('Dispositivo olvidado: pide el PIN de nuevo', 2400);
-    try { state.ws.close(); } catch (_) {}
+  $('btn-logout').addEventListener('click', olvidarEsteDispositivo);
+
+  $('s-confirm').addEventListener('change', (event) => {
+    send('set_confirm', { on: event.target.checked });
   });
 
   // --- detener el servicio en la PC -------------------------------------

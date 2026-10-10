@@ -327,6 +327,15 @@ const REMOTEPAD_WEB = '1.7.0';
       <button class="key" id="btn-learning-reset">🧠 Reiniciar lo aprendido</button>
     </div>
 
+    <h3 class="bloque">Dispositivos con acceso</h3>
+    <label class="setting switch">
+      <span>Pedir permiso en la PC a los dispositivos nuevos</span>
+      <input id="s-confirm" type="checkbox">
+    </label>
+    <ul class="devices" id="devices-list"><li class="devices-empty">Cargando…</li></ul>
+    <p class="tiny">Si ves uno que no reconoces, quítalo: tendrá que volver a
+    escanear el QR o escribir el PIN.</p>
+
     <div class="sheet-actions">
       <button class="key" id="btn-awake">💡 Mantener la pantalla encendida</button>
       <button class="key" id="btn-fullscreen">Pantalla completa</button>

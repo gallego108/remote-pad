@@ -404,6 +404,40 @@ textarea#kb-text:focus { border-color: var(--accent); }
   color: var(--accent);
 }
 
+/* Lista de dispositivos con acceso (Ajustes). */
+.devices {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.devices li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #1c2537;
+  font-size: .86rem;
+}
+.devices .device-info { flex: 1 1 auto; min-width: 0; }
+.devices .device-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.devices .device-meta { display: block; color: var(--muted); font-size: .76rem; }
+.devices .device-tag {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: .7rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+.devices .key { flex: 0 0 auto; padding: 8px 12px; }
+.devices .key.danger { color: var(--danger); border-color: var(--danger); }
+.devices .devices-empty { color: var(--muted); }
+
 input[type="range"] {
   width: 100%;
   accent-color: var(--accent);

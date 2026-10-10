@@ -52,3 +52,6 @@ server/learning.json
 # Secretos y configuracion local (no deberia haber, pero por si acaso)
 *.local
 .env
+
+# Capturas de las pruebas de interfaz con el navegador
+.playwright-mcp/
