@@ -42,6 +42,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
+from urllib.parse import urlsplit
 
 from aiohttp import WSMsgType, web
 
@@ -58,7 +59,11 @@ import learning
 # --------------------------------------------------------------------- ajustes
 WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
 # Ajustes que se recuerdan entre arranques (por ahora, solo el codigo de acceso).
-CONFIG_FILE = Path(__file__).resolve().parent / "config.json"
+# Las pruebas usan REMOTEPAD_CONFIG para no tocar el archivo real.
+CONFIG_FILE = Path(
+    os.environ.get("REMOTEPAD_CONFIG")
+    or (Path(__file__).resolve().parent / "config.json")
+)
 # Accesos de los dispositivos ya autorizados: se guardan en disco para no tener
 # que volver a pedir el PIN (ni el QR) cada vez que se reinicia el servidor.
 # Las pruebas usan REMOTEPAD_TOKENS para no tocar el archivo real.
@@ -243,6 +248,37 @@ def local_ip() -> str:
             return str(socket.gethostbyname(socket.gethostname()))
         except Exception:
             return "127.0.0.1"
+
+
+def is_loopback(addr: str) -> bool:
+    """La peticion viene de la propia PC."""
+    if addr == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(addr).is_loopback
+    except ValueError:
+        return False
+
+
+def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
+    """
+    El WebSocket solo se acepta desde la propia aplicacion.
+
+    Un navegador siempre manda la cabecera Origin. Si no coincide con la
+    direccion del servidor, la conexion la ha abierto OTRA pagina web (por
+    ejemplo, una que el usuario visita en un navegador de la misma red) y se
+    rechaza. Los clientes que no son navegadores (pruebas, scripts) no mandan
+    Origin: ahi no hay pagina ajena que proteger y se aceptan.
+    """
+    if not origin:
+        return True
+    if not host:
+        return False
+    try:
+        parsed = urlsplit(origin)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and parsed.netloc.lower() == host.lower()
 
 
 def is_private(addr: str) -> bool:
@@ -1218,14 +1254,21 @@ class Gateway:
             return self.auth_payload(client, con_token=True)
 
         if pin:
-            log.warning("PIN incorrecto desde %s (el PIN vigente es %s; "
-                        "caduca cada 5 minutos)", client.addr, self.pin)
+            # El PIN vigente no se escribe aqui: el registro puede acabar en un
+            # archivo (probar.bat lo guarda en %TEMP%) y ya se ve en el banner.
+            log.warning("PIN incorrecto desde %s (caduca cada 5 minutos: "
+                        "mira el vigente en la consola)", client.addr)
         else:
             log.warning("Peticion de acceso sin PIN ni token desde %s", client.addr)
         return {"t": "auth_fail", "reason": "PIN incorrecto"}
 
     # -------------------------------------------------------------- WebSocket
     async def ws_handler(self, request: web.Request) -> web.WebSocketResponse:
+        if not origin_allowed(request.headers.get("Origin"), request.host):
+            # Otra pagina web intenta hablar con RemotePad desde el navegador.
+            log.warning("WebSocket rechazado desde %s: origen ajeno (%s)",
+                        request.remote, request.headers.get("Origin"))
+            raise web.HTTPForbidden(text="Origen no permitido")
         ws = web.WebSocketResponse(heartbeat=25, max_msg_size=2 * 1024 * 1024)
         await ws.prepare(request)
 
@@ -1271,6 +1314,13 @@ class Gateway:
         # --- todavia sin autenticar -----------------------------------------
         if client.kind == "auth" and client.token is None:
             if action == "viewer":
+                # El modo espectador ve el PIN: solo para la propia PC. Antes se
+                # aceptaba desde cualquier equipo de la red, y bastaba un mensaje
+                # para conocer el PIN y entrar.
+                if not is_loopback(client.addr):
+                    log.warning("Modo espectador rechazado desde %s", client.addr)
+                    self._enqueue(client, {"t": "denied", "reason": "solo en la PC"})
+                    return
                 client.kind = "viewer"
                 client.token = ""
                 self.clients.add(client)
@@ -1302,10 +1352,12 @@ class Gateway:
             if action == "auth_query":
                 # Pregunta de la pantalla de acceso: asi sabe si debe pedir
                 # codigo o si puede entrar directamente.
+                # NUNCA se incluye el PIN: quien pregunta aun no esta
+                # autorizado, y con el PIN podria entrar sin estar delante de
+                # la PC.
                 self._enqueue(client, {
                     "t": "auth_state",
                     "required": self.auth_required,
-                    "pin": self.pin if self.auth_required else "",
                 })
                 return
 
@@ -1470,8 +1522,7 @@ def build_app(gateway: Gateway) -> web.Application:
         return web.FileResponse(candidate)
 
     def is_local(request: web.Request) -> bool:
-        addr = request.remote or ""
-        return addr in ("127.0.0.1", "::1", "localhost")
+        return is_loopback(request.remote or "")
 
     async def qr_page(request: web.Request) -> web.StreamResponse:
         # Solo desde la propia PC: la pagina contiene el PIN y la clave que
