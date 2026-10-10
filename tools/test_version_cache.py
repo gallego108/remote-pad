@@ -66,7 +66,11 @@ async def main() -> int:
     print("\n== Service worker ==")
     check("Pide el codigo a la red sin cache",
           "cache: 'no-store'" in sw and "critico" in sw)
-    check("La version de la cache ha cambiado", "remotepad-v4" in sw)
+    # La v4 fue la primera con "red primero"; cada version posterior la sube.
+    version_cache = re.search(r"const CACHE = 'remotepad-v(\d+)'", sw)
+    check("La version de la cache ha cambiado",
+          version_cache is not None and int(version_cache.group(1)) >= 4,
+          version_cache.group(0) if version_cache else "sin nombre de cache")
     check("No cachea la recarga forzada", "?v=" in sw)
 
     print("\n== El servidor inyecta la version ==")

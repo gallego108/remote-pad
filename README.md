@@ -3,8 +3,9 @@
 Convierte tu celular Android en un **touchpad inalámbrico** para tu PC con
 Windows: mueve el puntero, haz clic, arrastra, escribe (o **dicta**), controla
 el volumen, comparte el **portapapeles**, señala con un **puntero láser**,
-evita que la pantalla se apague y **aprende de tu forma de moverte**. Todo desde
-el navegador del teléfono y por tu propia red WiFi.
+juega con un **mando** en pantalla, crea **tus propios atajos**, salta entre
+**varios monitores**, evita que la pantalla se apague y **aprende de tu forma
+de moverte**. Todo desde el navegador del teléfono y por tu propia red WiFi.
 
 No hay que instalar nada en el celular: el servidor de la PC sirve la
 aplicación web, y el teléfono solo tiene que abrir una dirección.
@@ -38,6 +39,21 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
    renueva solo, así que hay tiempo de sobra para escanear.
 5. Si el QR no te resulta cómodo, abre `http://192.168.1.9:8765` y escribe el
    PIN de 6 dígitos.
+
+### Desde la consola de la PC
+
+Además de mostrar el PIN y el QR, la consola acepta órdenes (escríbelas y pulsa
+ENTER):
+
+| Orden | Qué hace |
+|---|---|
+| ENTER | Muestra un código QR nuevo |
+| `dispositivos` | Lista los dispositivos con acceso |
+| `revocar <código>` | Quita el acceso a uno (el código sale en la lista) |
+| `confirmar on` / `confirmar off` | Pedir (o no) tu permiso para cada dispositivo nuevo |
+| `si` / `no` | Responder cuando un dispositivo nuevo pide permiso |
+| `auth off` / `auth on` | Quitar o volver a pedir el código de acceso |
+| `q` | Detener RemotePad |
 
 ### Para detenerlo
 
@@ -163,6 +179,14 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
     voz, se usa directamente, sin depender del teclado.
   - **⬇ Traer del PC / ⬆ Copiar en el PC** — portapapeles compartido.
 - **Atajos** — copiar, pegar, deshacer, Alt+Tab, F11, bloquear la PC…
+  - **Mis atajos**: crea tus propios botones con una combinación
+    (`ctrl+shift+t`), un texto que escribes a menudo o varios pasos seguidos
+    con esperas entre ellos. Se guardan también en la PC.
+  - **Llevar el puntero a la pantalla N**: si la PC tiene varios monitores,
+    un toque lo deja en el centro del que elijas.
+- **Mando** — cruceta, botones A/B/X/Y y Select/Start para jugar. Cada botón
+  **mantiene la tecla pulsada** mientras tienes el dedo encima y puedes pulsar
+  varios a la vez. Teclas en flechas, WASD o las que elijas.
 - **Multimedia** — ⏮ ⏯ ⏭, silencio y subir/bajar volumen.
 - **Presentar** — anterior/siguiente diapositiva, iniciar (F5), salir, y
   pantalla en negro o blanco (PowerPoint, Impress y similares).
@@ -170,7 +194,9 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
   natural, inercia, gestos de 3 dedos, bordes, pinza, vibración y el desbloqueo.
   Incluye **💡 Mantener la pantalla encendida**: eliges cuánto tiempo (5 min a
   4 h) y la app mueve el ratón 1 píxel cada 40 s para que la PC no se apague
-  ni se suspenda. Todo lo que ajustes se guarda **también en la PC**
+  ni se suspenda. En **Dispositivos con acceso** ves qué celulares pueden
+  entrar y quitas los que no reconozcas. Todo lo que ajustes se guarda
+  **también en la PC**
   (`server/profiles.json`, ligado al dispositivo), así que no hay que volver a
   configurarlo al entrar de nuevo.
 - **Ayuda** — la **guía de uso completa dentro de la app** y un botón para
@@ -185,8 +211,16 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 - **Código QR de un solo uso**: su clave caduca en 5 minutos y se invalida al
   primer escaneo, así que el enlace del historial del navegador deja de servir.
 - Tras acertar el PIN o el QR, el celular recibe un **token** y ya no lo vuelve
-  a pedir: se guarda en `server/tokens.json` para que **sobreviva a los
-  reinicios** (hasta 30 días).
+  a pedir: la PC guarda solo su **huella** (no el token) en
+  `server/tokens.json`, para que **sobreviva a los reinicios** (hasta 30 días).
+- **Lista de dispositivos con acceso** (en *Ajustes* o con `dispositivos` en la
+  consola): quita cualquiera y se desconecta al momento. Cada vez que entra uno
+  nuevo, la consola y los demás celulares lo avisan.
+- **Permiso en la PC** (opcional, `--confirmar`): además del PIN o el QR, cada
+  dispositivo nuevo necesita que digas que sí en la PC.
+- **HTTPS** (opcional, `--https`): el tráfico va cifrado con un certificado
+  propio de tu PC.
+- Otras páginas web abiertas en tu red **no pueden** conectarse a RemotePad.
 - **8 intentos fallidos** de PIN (o 10 de QR) desde una misma dirección
   bloquean el acceso durante 5 minutos.
 - El panel que muestra el QR en grande **solo responde a la propia PC**.
@@ -212,6 +246,8 @@ python app.py --host 127.0.0.1     # solo esta PC (para pruebas)
 python app.py --no-auth            # sin PIN ni QR (¡solo para pruebas!)
 python app.py --no-qr              # con PIN, pero sin código QR
 python app.py --no-browser         # no abrir el panel del QR al iniciar
+python app.py --https              # tráfico cifrado (instala 'cryptography' si falta)
+python app.py --confirmar          # pedir permiso en la PC a cada dispositivo nuevo
 ```
 
 También puedes pasar estos parámetros a `iniciar.bat`, por ejemplo:
@@ -229,14 +265,18 @@ remote-pad/
 ├── activar-codigo.bat       ← volver a pedir el PIN y el QR
 ├── quitar-codigo.bat        ← quitar el PIN y el QR temporalmente
 ├── server/
-│   ├── app.py               Servidor HTTP + WebSocket, acceso por PIN/QR
+│   ├── app.py               Servidor HTTP + WebSocket, dispositivos, consola
+│   ├── auth.py              Control de acceso: PIN, QR, dispositivos autorizados
+│   ├── certificado.py       Certificados para --https
 │   ├── qr.py                Generador de códigos QR (sin dependencias)
 │   ├── controller.py        Control del escritorio (puntero, clics, teclado)
 │   ├── native_input.py      Capa nativa de Windows (SendInput, cursor, rueda)
 │   ├── laser.py             Puntero láser (capa transparente sobre la pantalla)
+│   ├── learning.py          Aprendizaje del tacto
 │   ├── config.json          ¿Se pide código de acceso? — local, no se versiona
 │   ├── tokens.json          Accesos de los dispositivos — local, no se versiona
 │   ├── profiles.json        Preferencias de cada dispositivo — local, no se versiona
+│   ├── https/               Certificados de --https — local, no se versiona
 │   └── requirements.txt
 ├── web/                     Aplicación del celular (PWA)
 │   ├── index.html           Interfaz + guía de uso + tutorial
@@ -246,6 +286,7 @@ remote-pad/
 │   ├── sw.js                Service worker (funcionamiento sin conexión)
 │   └── manifest.webmanifest
 └── tools/
+    ├── run_tests.py         Lanza todas las pruebas (lo usan probar.bat y la CI)
     ├── check_ui.py          Coherencia entre HTML, CSS y JS
     ├── diagnostico_red.py   Averigua por qué el celular no conecta
     ├── diagnostico_qr.py    Diagnóstico del acceso por código QR
@@ -261,12 +302,21 @@ remote-pad/
     ├── test_qr_rotacion.py  Rotación del QR y margen de gracia
     ├── test_qr_window.py    Ventana de validez del QR y del PIN
     ├── test_acceso_libre.py Código de acceso desactivable
-    └── test_version_cache.py  Anti-caché y detector de versión
+    ├── test_version_cache.py  Anti-caché y detector de versión
+    ├── test_seguridad.py    El PIN no sale de la PC, Origin, fuerza bruta
+    ├── test_auth.py         Módulo de acceso (huellas, migración, guardado)
+    ├── test_dispositivos.py Lista, revocación y permiso en la PC
+    ├── test_https.py        Certificados y conexión cifrada
+    ├── test_monitores.py    Varios monitores
+    ├── test_atajos.py       Atajos personalizados
+    └── test_mando.py        Modo mando (teclas mantenidas)
 ```
 
 **Requisito único:** Python 3.9 o superior con `aiohttp`
 (`iniciar.bat` lo instala solo si falta). No hacen falta permisos de
 administrador. El puntero láser usa `tkinter`, que viene con Python en Windows.
+Solo el modo `--https` necesita además `cryptography` (también lo instala
+`iniciar.bat` cuando lo pides).
 
 ---
 
@@ -346,7 +396,9 @@ apagar y reiniciar desde *Ajustes → Aprendizaje*.
 | Algo se quedó arrastrando | Pulsa **Soltar** (o el botón **Puntero** de la barra superior). |
 | "No se pudo abrir el puerto 8765" | Otro programa lo ocupa: `iniciar.bat --port 8899`. |
 | Quiero saber por qué no conecta | `python tools/diagnostico_red.py 8765` |
-| Quiero comprobar que todo está bien | Doble clic en **`probar.bat`** (35 pruebas de control + arrastre + QR). |
+| Quiero comprobar que todo está bien | Doble clic en **`probar.bat`** (todas las pruebas; `probar.bat --ci` sin mover el puntero). |
+| El puntero no pasa a mi segundo monitor | Actualiza a la 1.8: antes se limitaba al monitor principal. |
+| Se ha conectado alguien que no conozco | *Ajustes → Dispositivos con acceso → Quitar*, o `revocar <código>` en la consola. Activa `--confirmar` para que nadie nuevo entre sin tu permiso. |
 
 ---
 

@@ -27,11 +27,16 @@ imágenes; `opencv-python-headless` es una segunda opinión al leer QR.
 ```
 remote-pad/
 ├── iniciar.bat          Lanzador para el usuario final
-├── probar.bat           Verificación completa
+├── probar.bat           Verificación completa (llama a tools/run_tests.py)
+├── .github/workflows/   Integración continua (pruebas en Windows)
 ├── server/
-│   ├── app.py           HTTP/WebSocket, autenticación, bucle de animación
-│   ├── controller.py    Control del escritorio (estado del puntero)
-│   ├── native_input.py  API nativa de Windows (SendInput, cursor, rueda)
+│   ├── app.py           HTTP/WebSocket, dispositivos, bucle de animación, consola
+│   ├── auth.py          PIN, QR, intentos fallidos, dispositivos, guardado atómico
+│   ├── certificado.py   Certificados para --https
+│   ├── controller.py    Control del escritorio (puntero, monitores, teclas)
+│   ├── native_input.py  API nativa de Windows (SendInput, cursor, monitores)
+│   ├── learning.py      Aprendizaje del tacto
+│   ├── laser.py         Puntero láser
 │   └── qr.py            Codificador de QR y dibujo en consola
 ├── web/
 │   ├── index.html       Interfaz del celular
@@ -46,22 +51,32 @@ remote-pad/
 
 ## Ejecutar las pruebas
 
-```bash
-python tools/check_ui.py                 # HTML/CSS/JS coherentes, sin servidor
-python tools/test_qr.py                  # generador de QR (no necesita servidor)
-python tools/test_qr_window.py           # ventana del QR (reloj falseado)
-python tools/test_qr_capacity.py         # QR llenos al máximo (necesita zxing-cpp)
-python tools/verify_rs.py                # Reed-Solomon (no necesita servidor)
+Todo de una vez (arranca su propio servidor en el 8791, ejecuta las pruebas y
+lo detiene):
 
-# Las siguientes necesitan un servidor en marcha:
-python app.py --port 8791 --no-browser &
-python tools/test_client.py --port 8791 --pin <PIN> --cursor
-python tools/test_drag.py   --port 8791 --pin <PIN>
-python tools/test_qr_login.py 8791
+```bash
+python tools/run_tests.py                # todo (mueve el puntero de verdad)
+python tools/run_tests.py --ci           # sin tocar el escritorio
+python tools/run_tests.py test_auth      # solo las que contengan ese texto
 ```
 
-O todo de una vez con `probar.bat`, que arranca su propio servidor, comprueba y
-lo detiene.
+`probar.bat` hace lo mismo con doble clic (y admite los mismos argumentos). La
+integración continua (`.github/workflows/pruebas.yml`) ejecuta
+`run_tests.py --ci` en Windows en cada push y pull request.
+
+La lista de pruebas vive **solo** en `tools/run_tests.py`: al añadir una, se
+añade ahí. Cada prueba también se puede lanzar suelta:
+
+```bash
+python tools/check_ui.py                 # HTML/CSS/JS coherentes, sin servidor
+python tools/test_auth.py                # modulo de acceso, sin servidor
+python tools/test_qr_capacity.py         # QR llenos al máximo (necesita zxing-cpp)
+
+# Las que reciben puerto y PIN necesitan un servidor en marcha:
+python server/app.py --port 8791 --no-browser
+python tools/test_client.py --port 8791 --pin <PIN> --cursor
+python tools/test_monitores.py --port 8791 --pin <PIN> [--cursor]
+```
 
 ### Diagnóstico de red
 
@@ -94,15 +109,24 @@ bloquea al celular.
 | `test_qr_rotacion.py` | Rotación del QR, margen de gracia, un solo uso y recuperación con token |
 | `test_acceso_libre.py` | El código de acceso desactivable: arranque con `--no-auth`, cambio en caliente desde el celular y desde la consola, permisos y persistencia |
 | `test_version_cache.py` | Anti-caché: versión inyectada en el HTML, `no-store`, coherencia entre HTML y servidor, y service worker "red primero" |
+| `test_seguridad.py` | Que el PIN no llegue a quien no está autorizado, el modo espectador solo desde la PC, el rechazo de `Origin` ajenos, el bloqueo tras 8 fallos y que el registro no escriba el PIN |
+| `test_auth.py` | `auth.py` sin servidor: tokens solo como huella, migración del formato antiguo, caducidad, revocación, escritura atómica, poda de fallos, validación y migración de preferencias, nombre del dispositivo |
+| `test_dispositivos.py` | Confirmación en la PC (por consola), aviso a los demás, lista de dispositivos, revocación con desconexión y reconexión sin código |
+| `test_https.py` | Certificados (IP, duración, refirmado con la misma autoridad), conexión HTTPS/WSS de confianza, direcciones `https://` y `/ca.crt`. Se omite sin `cryptography` |
+| `test_monitores.py` | Límite del puntero con distribuciones de monitores simuladas, controlador con dos monitores falsos, lectura real y protocolo |
+| `test_atajos.py` | Validación de los atajos, ejecución en orden con teclado simulado y protocolo con pasos inofensivos |
+| `test_mando.py` | Teclas mantenidas: controlador simulado, protocolo con Mayús, 30 toques rápidos sin teclas pegadas y liberación al desconectar |
 | `test_aprendizaje.py` | Aprendizaje del tacto, con movimientos simulados: que baje la ganancia al pasarse, que suba al quedarse corto, que se quede neutro con uso equilibrado, los perfiles por aplicación y el guardado en disco |
 
 ### Aislamiento de los archivos de estado
 
-`probar.bat` define `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES` y
-`REMOTEPAD_LEARNING` apuntando a `%TEMP%`, así que las pruebas **no escriben**
-en `server/tokens.json`, `server/profiles.json` ni `server/learning.json` del
-usuario. Si lanzas una prueba a mano sin esas variables, sí usará los archivos
-reales (inofensivo, pero ensucia).
+`tools/run_tests.py` define `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES`,
+`REMOTEPAD_LEARNING`, `REMOTEPAD_CONFIG` y `REMOTEPAD_HTTPS_DIR` apuntando a una
+carpeta temporal, así que las pruebas **no escriben** en los archivos de
+`server/` del usuario. También define `REMOTEPAD_SIN_VENTANAS=1`: la
+confirmación de dispositivos nuevos se responde por la consola en lugar de
+abrir una ventana. Si lanzas a mano una prueba que arranca un servidor sin esas
+variables, usará los archivos reales (inofensivo, pero ensucia).
 
 ## Notas para tocar el código
 
@@ -162,13 +186,19 @@ self._queue_click(lambda x=x, y=y: c.mouse_move_to(x, y))
 
 ## Añadir una acción nueva
 
-1. **Servidor**: añade la rama en `Gateway.handle_action()`. Si es rápida y
+1. **Servidor**: añade la rama en `Gateway.handle_action()` escrita como
+   `if action == "nombre":` (así la encuentra `check_ui.py`). Si es rápida y
    ligera, ejecútala directamente; si toca el sistema operativo, mándala al
-   ejecutor.
+   ejecutor; si el **orden** importa respecto a otras órdenes, por la cola de
+   clics (`_queue_click`).
 2. **Controlador**: implementa el método en `DesktopController` usando
    `native_input`.
 3. **Cliente**: llama a `send('nombre_accion', { ... })`.
-4. **Prueba**: añade la comprobación en `tools/test_client.py`.
+4. **Prueba**: añade la comprobación en `tools/test_client.py` o en una prueba
+   nueva registrada en `tools/run_tests.py`.
+5. Si cambia algo de `web/`, **sube la versión** (`APP_VERSION` en `app.py`,
+   `REMOTEPAD_WEB` y los `?v=` de `index.html`; `test_version_cache.py` lo
+   comprueba) y el nombre de la caché de `web/sw.js`.
 
 ## Registro y depuración
 

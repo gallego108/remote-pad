@@ -1,5 +1,81 @@
 # Historial de cambios
 
+## 1.8.0
+
+Seguridad reforzada, gestión de dispositivos, HTTPS, varios monitores, atajos
+propios y un mando para jugar.
+
+### Seguridad
+
+- **Corregido (grave): el PIN llegaba a quien no estaba autorizado.** La
+  pantalla de acceso preguntaba a la PC si hacía falta código (`auth_query`) y
+  la respuesta incluía el PIN vigente; el modo espectador también lo daba.
+  Cualquier equipo de tu red podía leerlo con un solo mensaje y entrar. Ahora
+  el PIN no sale nunca hacia quien no ha entrado, y el modo espectador solo
+  funciona desde la propia PC.
+- **Otras páginas web ya no pueden conectarse.** El WebSocket rechaza las
+  conexiones cuyo `Origin` no es el de RemotePad: una página abierta en un
+  navegador de tu red no puede hablar con la app (con el código quitado, podía
+  manejar la PC).
+- **Los tokens ya no se guardan en claro.** `tokens.json` y `profiles.json`
+  guardan solo la huella SHA-256: quien copie esos archivos no obtiene acceso.
+  Los archivos antiguos se convierten solos al arrancar, sin que nadie tenga
+  que volver a entrar.
+- El registro ya no escribe el PIN vigente cuando alguien se equivoca.
+- **HTTPS opcional** (`--https`): RemotePad crea una autoridad local y un
+  certificado para la IP de tu PC. Instalando la autoridad en el celular
+  (`/ca.crt`) el navegador confía sin avisos. Si cambia la IP, se vuelve a
+  firmar el certificado sin tener que reinstalar nada.
+
+### Dispositivos
+
+- **Lista de dispositivos con acceso** en *Ajustes* (y `dispositivos` en la
+  consola): nombre, dirección, última conexión, cuál eres tú y cuáles están
+  conectados. **Quitar** retira el acceso y desconecta al momento (también
+  `revocar <código>` en la consola).
+- **Aviso** en la consola y en los demás celulares cada vez que entra un
+  dispositivo nuevo.
+- **Permiso en la PC** opcional (`--confirmar`, `confirmar on` o el interruptor
+  de *Ajustes*): cada dispositivo nuevo necesita que digas que sí en una
+  ventana de la PC (o `si` en la consola), además del PIN o el QR.
+- *Olvidar este dispositivo* retira también el acceso en la PC; antes solo lo
+  borraba del celular y el token seguía valiendo.
+
+### Añadido
+
+- **Mando** (🎮): cruceta, A/B/X/Y y Select/Start que **mantienen la tecla
+  pulsada** mientras tienes el dedo encima, varios a la vez. Teclas en flechas,
+  WASD o las que elijas.
+- **Mis atajos**: botones propios con combinaciones (`ctrl+shift+t`, también
+  con nombres como *mayus* o *supr*), textos y esperas, en el orden que
+  quieras. Se guardan en la PC con tu perfil.
+- **Varios monitores**: el puntero pasa de una pantalla a otra, y en *Atajos*
+  puedes llevarlo de golpe al centro de la pantalla que elijas.
+- Órdenes nuevas en la consola: `dispositivos`, `revocar`, `confirmar on/off`,
+  `si` / `no`.
+
+### Corregido
+
+- **El puntero no podía pasar a un segundo monitor**: se limitaba al monitor
+  principal.
+- Con el código de acceso quitado, **cada reconexión creaba un acceso nuevo** y
+  `tokens.json` crecía sin parar.
+- Los archivos de estado se escriben de forma **atómica**: un corte a mitad de
+  escritura ya no deja un JSON roto que deje fuera a todos los dispositivos.
+- Las preferencias que guarda cada celular tienen límites (antes se podía
+  llenar `profiles.json` con mensajes de 2 MB) y solo se escriben si cambian.
+- Los registros de intentos fallidos y los perfiles de accesos caducados se
+  limpian solos.
+
+### Desarrollo
+
+- El control de acceso vive en su propio módulo, `server/auth.py`.
+- `tools/run_tests.py` lanza todas las pruebas con archivos de estado
+  temporales; `probar.bat` lo usa y la **integración continua** de GitHub
+  (`.github/workflows/pruebas.yml`) también, en Windows.
+- Pruebas nuevas: `test_seguridad`, `test_auth`, `test_dispositivos`,
+  `test_https`, `test_monitores`, `test_atajos` y `test_mando`.
+
 ## 1.7.0
 
 Aprendizaje: la app se adapta a como usas el puntero.

@@ -76,9 +76,11 @@ para que un deslizamiento lento también acabe moviendo la página.
 
 | Archivo | Responsabilidad |
 |---|---|
-| `server/app.py` | Servidor HTTP/WebSocket, autenticación, difusión, bucle de animación |
+| `server/app.py` | Servidor HTTP/WebSocket, difusión, bucle de animación, gestión de dispositivos y consola |
+| `server/auth.py` | Control de acceso: PIN, claves del QR, intentos fallidos, dispositivos autorizados (solo huellas) y escritura atómica de los archivos de estado. No sabe nada de red ni de Windows: se prueba sin servidor |
+| `server/certificado.py` | Autoridad local y certificado para `--https` (necesita `cryptography`, solo en ese modo) |
 | `server/controller.py` | Traduce acciones en llamadas a la capa nativa; mantiene el estado del puntero y del arrastre |
-| `server/native_input.py` | Única dependencia del sistema operativo: `SendInput`, `SetCursorPos`, `GetAsyncKeyState` |
+| `server/native_input.py` | Única dependencia del sistema operativo: `SendInput`, `SetCursorPos`, monitores (`EnumDisplayMonitors`) y la ventana de confirmación |
 | `server/qr.py` | Codificador de QR completo (rejilla, Reed-Solomon, máscaras) y dibujo en consola |
 | `server/laser.py` | Proceso aparte que dibuja el puntero láser: ventana `tkinter` transparente y "click-through" |
 | `server/learning.py` | Aprendizaje del tacto: deduce la ganancia del puntero a partir de cómo corriges, por aplicación |
@@ -91,14 +93,19 @@ Todo vive en la carpeta `server/` y **no se versiona** (ver `.gitignore`):
 
 | Archivo | Contenido | Por qué |
 |---|---|---|
-| `config.json` | Si se pide código de acceso | Que `quitar-codigo.bat` sobreviva al reinicio |
-| `tokens.json` | Accesos de los dispositivos autorizados | Que reiniciar el servidor no obligue a escribir el PIN otra vez |
-| `profiles.json` | Preferencias de cada dispositivo (por token) | Que no haya que reajustar velocidad, gestos, etc. |
+| `config.json` | Si se pide código de acceso y si se confirman los dispositivos nuevos | Que `quitar-codigo.bat` y `--confirmar` sobrevivan al reinicio |
+| `tokens.json` | Huella SHA-256 de cada acceso, con nombre, dirección y última conexión | Que reiniciar el servidor no obligue a escribir el PIN otra vez |
+| `profiles.json` | Preferencias de cada dispositivo (por huella), incluidos sus atajos y las teclas del mando | Que no haya que reajustar nada al volver a entrar |
 | `learning.json` | Ganancia aprendida por aplicación | Que la adaptación sobreviva al reinicio |
+| `https/` | Autoridad local y certificado (solo con `--https`) | Que el celular siga confiando tras reiniciar |
 
-Las pruebas **no tocan** esos archivos: `probar.bat` redirige los tres últimos
-con `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES` y `REMOTEPAD_LEARNING` a archivos
-temporales.
+Se escriben de forma **atómica** (archivo temporal + `os.replace`): un corte a
+mitad de escritura no deja un JSON roto. Los formatos antiguos (tokens en
+claro) se convierten solos al arrancar.
+
+Las pruebas **no tocan** esos archivos: `tools/run_tests.py` los redirige a una
+carpeta temporal con `REMOTEPAD_TOKENS`, `REMOTEPAD_PROFILES`,
+`REMOTEPAD_LEARNING`, `REMOTEPAD_CONFIG` y `REMOTEPAD_HTTPS_DIR`.
 
 ### Cómo aprende la ganancia
 
@@ -133,6 +140,15 @@ El puntero se sigue con una posición "virtual" propia porque `pynput` y
 - **Borde de pantalla**: al llegar al límite se descarta el desplazamiento
   sobrante y se resincroniza, para que al cambiar de dirección el puntero
   responda al instante.
+- **Varios monitores**: el límite es la zona que cubren **todos** los
+  monitores, no solo el principal (hasta la 1.7 el puntero no podía pasar a un
+  segundo monitor). Los que están a la izquierda o encima tienen coordenadas
+  negativas, y en los huecos que dejan monitores de distinta altura el puntero
+  se pega al borde más cercano, como el ratón físico. La lista de monitores se
+  refresca cada 3 s, no en cada movimiento.
+- **Teclas mantenidas (modo mando)**: el controlador recuerda qué teclas tiene
+  pulsadas (como mucho 8) y `release_all` las suelta al desconectarse el
+  celular.
 
 ### Estados de la interfaz del celular
 
@@ -162,6 +178,10 @@ En ambos casos, si el celular se desconecta o pasa a segundo plano, el servidor
   porque `SendInput` es bloqueante.
 - Los eventos de puntero **no** pasan por el ejecutor: los aplica el bucle de
   animación, ya consolidados.
+- Lo que depende del **orden** (clics, `mouse_down`/`mouse_up`, `key_down`/
+  `key_up`) va por la cola de clics, que el bucle de animación ejecuta de una
+  en una. Por el ejecutor, con 3 hilos, un toque rápido podría soltar una
+  tecla antes de pulsarla.
 - Los valores que van a un hilo se pasan **como argumentos por defecto** en el
   `run_in_executor`; de lo contrario el hilo leería variables ya reasignadas por
   el siguiente mensaje.
@@ -173,5 +193,7 @@ En ambos casos, si el celular se desconecta o pasa a segundo plano, el servidor
   lo avisa en lugar de fallar en silencio.
 - El **nivel de volumen** no se puede leer ni fijar desde una aplicación
   normal: se sube o baja a pasos de tecla multimedia.
-- Sin cifrado: el tráfico va en claro por la red local. Ver
+- Sin `--https`, el tráfico va en claro por la red local. Ver
   [seguridad.md](seguridad.md).
+- El proceso no declara conciencia de DPI: en equipos con monitores de
+  distinta escala, Windows virtualiza las coordenadas.

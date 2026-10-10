@@ -1702,6 +1702,9 @@ const TUTORIAL_STEPS = [
   { icon: '🎵', title: 'Atajos, volumen y láser',
     body: 'En los paneles de abajo tienes atajos, multimedia y presentaciones. Con 3 dedos ↑↓ '
       + 'cambias el volumen, y con 🔴 señalas con el puntero láser.' },
+  { icon: '🎮', title: 'Mando y tus atajos',
+    body: 'En 🎮 Mando tienes cruceta y botones para jugar. En ⚡ Atajos puedes crear tus '
+      + 'propios botones: combinaciones de teclas, textos o varios pasos seguidos.' },
   { icon: '✅', title: '¡Todo listo!',
     body: 'Puedes volver a ver este tutorial desde ❓ Ayuda. Si algo se queda pegado, pulsa Soltar.' },
 ];

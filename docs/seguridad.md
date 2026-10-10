@@ -9,12 +9,14 @@ tiene y, sobre todo, las que **no** tiene.
 |---|---|
 | PIN de 6 dígitos rotativo | Sí |
 | Código QR de un solo uso | Sí |
-| Token por dispositivo | Sí |
+| Token por dispositivo (guardado solo como huella) | Sí |
+| Lista de dispositivos y retirada de accesos | Sí |
+| Permiso en la PC para cada dispositivo nuevo | Opcional (`--confirmar`) |
 | Límite de intentos fallidos | Sí |
 | Límite de caudal de órdenes | Sí |
+| Rechazo de conexiones desde otras páginas web (`Origin`) | Sí |
 | Solo red local (sin exponer a internet) | Sí |
-| Cifrado del tráfico | **No** |
-| Autenticación de dos factores | **No** |
+| Cifrado del tráfico | Opcional (`--https`) |
 
 ## Cómo se protege el acceso
 
@@ -52,8 +54,9 @@ instante tarde. Es una ventana pequeña y acotada, y cada código sigue sirviend
 
 Apagar el servidor no borra los tokens: se guardan en `server/tokens.json` y, al
 volver a arrancarlo, los celulares que ya estaban autorizados entran sin pedir
-nada (hasta 30 días). **Ese archivo es un secreto**: quien lo copie tiene acceso
-a la PC. Está en `.gitignore` y no se comparte.
+nada (hasta 30 días). El archivo guarda solo la **huella SHA-256** de cada
+token, nunca el token: quien lo copie no obtiene un acceso válido. Aun así está
+en `.gitignore` y no se comparte.
 
 ### Quitar el código de acceso
 
@@ -82,9 +85,46 @@ Tras acertar el PIN o el QR, el celular recibe un token de 24 bytes
 (`secrets.token_urlsafe`) que guarda en `localStorage` y dura 30 días. Así no
 hay que teclear el PIN cada vez.
 
-- Se comparan con `hmac.compare_digest`, recorriendo la lista completa.
-- Los caducados se purgan al emitir uno nuevo.
-- *Ajustes → Olvidar este dispositivo* lo borra del celular.
+- En la PC solo se guarda su huella SHA-256, junto con el nombre del
+  dispositivo (sacado del navegador), su dirección y la última conexión.
+- Se comparan las huellas con `hmac.compare_digest`, recorriendo la lista.
+- Los caducados se purgan solos.
+- *Ajustes → Olvidar este dispositivo* lo retira también en la PC: el token
+  deja de valer en todas partes.
+
+### Dispositivos con acceso
+
+En *Ajustes → Dispositivos con acceso* (o con `dispositivos` en la consola)
+se ve qué equipos pueden entrar, desde dónde y cuándo se conectaron por última
+vez. Cualquiera se puede quitar (*Quitar*, o `revocar <código>` en la consola):
+si está conectado se le desconecta al momento y tendrá que volver a escanear
+el QR o escribir el PIN.
+
+Cada vez que entra un dispositivo nuevo, la consola lo anuncia (con el comando
+para quitarlo) y los demás celulares conectados reciben un aviso.
+
+### Permiso en la PC para los dispositivos nuevos (opcional)
+
+Con `--confirmar`, `confirmar on` en la consola o el interruptor de *Ajustes*,
+acertar el PIN o escanear el QR ya no basta: la PC pregunta en una ventana (o
+en la consola, escribiendo `si` / `no`) si deja entrar a ese dispositivo. Sin
+respuesta en 60 segundos, se rechaza. Funciona como un segundo factor: hace
+falta ver la pantalla **y** estar delante de la PC.
+
+### Origen del WebSocket
+
+El servidor rechaza las conexiones WebSocket cuya cabecera `Origin` no es la
+suya. Sin esto, cualquier página web abierta en un navegador de tu red podía
+conectarse a RemotePad (y, con el código de acceso quitado, manejar la PC).
+
+### El PIN no sale de la PC
+
+El PIN solo se muestra en la consola, en el panel `/qr` (que solo responde a
+la propia PC) y a los dispositivos **ya autorizados** (para que puedan dejar
+entrar a otro). Hasta la versión 1.7 la pantalla de acceso del celular
+recibía el PIN antes de autenticarse, así que cualquiera de la red podía
+leerlo; desde la 1.8 no se envía nunca a quien no ha entrado, y el registro
+tampoco lo escribe al fallar un intento.
 
 ### Límite de intentos
 
@@ -102,24 +142,35 @@ script) sature la cola de entrada del sistema operativo.
 
 ## Qué NO está protegido
 
-### El tráfico no va cifrado
+### Sin `--https`, el tráfico no va cifrado
 
-HTTP y WebSocket en claro. En una red WiFi doméstica con WPA2/WPA3 esto es
-equivalente a la protección del propio WiFi, pero **cualquiera que pueda
-escuchar el tráfico de tu red podría leer el PIN y el token**.
+Por defecto, HTTP y WebSocket van en claro. En una red WiFi doméstica con
+WPA2/WPA3 esto es equivalente a la protección del propio WiFi, pero
+**cualquiera que pueda escuchar el tráfico de tu red podría leer el PIN y el
+token**.
 
 Si eso te preocupa, hay dos caminos:
 
-1. **Túnel**: usa la app solo a través de una VPN (Tailscale, WireGuard…) y
+1. **HTTPS** (`iniciar.bat --https`): RemotePad crea una autoridad local y un
+   certificado para la IP de tu PC (en `server/https/`, que no se versiona).
+   La primera vez el celular avisa de que la conexión no es privada; para que
+   confíe sin avisos, instala la autoridad desde `https://<ip-de-la-pc>:8765/ca.crt`
+   (Android: *Ajustes → Seguridad → Cifrado y credenciales → Instalar un
+   certificado → Certificado de CA*) y comprueba que su huella empieza como
+   indica la consola. Necesita el paquete `cryptography`, que `iniciar.bat`
+   instala si hace falta. Si cambia la IP de la PC se vuelve a firmar el
+   certificado con la misma autoridad: no hay que reinstalar nada.
+2. **Túnel**: usa la app solo a través de una VPN (Tailscale, WireGuard…) y
    escucha en la interfaz de la VPN.
-2. **HTTPS**: haría falta un certificado y aceptar el aviso del navegador (o
-   instalar el certificado en el celular). No está implementado.
 
 ### Un dispositivo autorizado tiene control total
 
 No hay permisos por acción ni modo "solo lectura" para quien ya entró, salvo el
-modo espectador, que se declara al conectar y solo puede mirar. Quien tenga el
-token puede mover el puntero, escribir y pulsar teclas multimedia.
+modo espectador (solo desde la propia PC), que solo puede mirar. Quien tenga el
+token puede mover el puntero, escribir, pulsar teclas multimedia y ejecutar sus
+atajos propios. Los atajos solo pueden hacer lo que haría el teclado
+(combinaciones, texto y esperas, con límites): no hay pasos para lanzar
+programas ni ejecutar órdenes.
 
 ### El QR es tan sensible como el PIN
 
@@ -146,10 +197,11 @@ arranca con `--no-qr` y usa solo el PIN.
    puede entrar durante esos 5 minutos. El PIN tiene el mismo problema.
 3. Revisa los avisos de la consola: cada acceso se registra con la dirección de
    origen.
-4. Si sospechas, ten en cuenta que **los tokens siguen siendo válidos** (duran
-   30 días y se guardan en `server/tokens.json`). Para cortar todos los accesos
-   de golpe: para el servidor y **borra `server/tokens.json`**. También puedes
-   usar *Olvidar este dispositivo* en cada celular.
+4. Si sospechas, revisa *Ajustes → Dispositivos con acceso* (o escribe
+   `dispositivos` en la consola) y quita los que no reconozcas. Para cortar
+   todos los accesos de golpe: para el servidor y **borra
+   `server/tokens.json`**. Si quieres que nadie nuevo entre sin tu permiso,
+   activa la confirmación (`--confirmar`).
 5. **El panel `/qr` debe quedarse en la PC.** No lo abras desde otro equipo: no
    funcionará (por diseño) y, si lo hiciera, estarías regalando el acceso.
 

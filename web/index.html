@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.7.0">
+<link rel="stylesheet" href="styles.css?v=1.8.0">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.7.0';
+const REMOTEPAD_WEB = '1.8.0';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -483,6 +483,29 @@ const REMOTEPAD_WEB = '1.7.0';
     <b>puntero láser</b>: tocar el panel solo señala con un punto rojo, sin
     mover el ratón ni hacer clic.</p>
 
+    <h3>Mando para jugar</h3>
+    <p>Abre <b>Mando</b>: cruceta, botones <b>A/B/X/Y</b> y Select/Start. Cada
+    botón <b>mantiene la tecla pulsada</b> mientras tengas el dedo encima, y puedes
+    pulsar varios a la vez (correr en diagonal y saltar). Elige las teclas:
+    flechas, WASD o las tuyas.</p>
+
+    <h3>Mis atajos</h3>
+    <p>En <b>Atajos → Crear un atajo</b> haces tus propios botones: una
+    combinación (escríbela como <b>ctrl+shift+t</b>), un texto que escribes a
+    menudo o varios pasos seguidos, con esperas entre ellos. Con <b>✎ Editar</b>
+    los cambias o los borras.</p>
+
+    <h3>Varios monitores</h3>
+    <p>El puntero pasa de una pantalla a otra como con el ratón. Para cruzar de
+    golpe, en <b>Atajos</b> aparece <b>Llevar el puntero a la pantalla</b> cuando
+    la PC tiene más de un monitor.</p>
+
+    <h3>Dispositivos con acceso</h3>
+    <p>En <b>Ajustes</b> ves qué celulares pueden entrar y cuándo se conectaron.
+    Si ves uno que no reconoces, pulsa <b>Quitar</b>: se desconecta al momento.
+    Con <b>Pedir permiso en la PC</b>, cada dispositivo nuevo necesita además que
+    digas que sí en la PC.</p>
+
     <h3>Ajustes y perfil</h3>
     <p>Lo que cambies en <b>Ajustes</b> (velocidad del puntero y del scroll,
     gestos, vibración…) se guarda <b>en la PC</b>, ligado a tu dispositivo: al
@@ -554,7 +577,7 @@ const REMOTEPAD_WEB = '1.7.0';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.7.0"></script>
+<script src="app.js?v=1.8.0"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero

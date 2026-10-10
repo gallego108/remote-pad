@@ -24,22 +24,31 @@ el acceso por QR). Los mensajes son objetos JSON compactos.
 
 | Acción | Datos | Respuesta |
 |---|---|---|
-| `auth` | `{ token }`, `{ pin }` o `{ sinCodigo: true }` | `{ t: "ok", status: "auth", token?, screen }` |
-| `auth_query` | — | `{ t: "auth_state", required, pin? }` — la pantalla de acceso pregunta si hace falta código |
-| `viewer` | — | `{ t: "ok", status: "viewer", pin }` (modo espectador, solo mira) |
+| `auth` | `{ token }`, `{ pin }` o `{ sinCodigo: true }` | `{ t: "ok", status: "auth", token?, device, screen, settings? }` |
+| `auth_query` | — | `{ t: "auth_state", required }` — la pantalla de acceso pregunta si hace falta código. **Nunca incluye el PIN** |
+| `viewer` | — | `{ t: "ok", status: "viewer", pin }` (modo espectador). **Solo desde la propia PC**; desde la red responde `denied` |
+
+`token` solo viaja en la respuesta que crea el acceso: el servidor guarda
+únicamente su huella SHA-256. `device` son los 8 primeros caracteres de esa
+huella: identifica al dispositivo en la lista y para retirarle el acceso.
+
+Si está activada la **confirmación de dispositivos nuevos**, la respuesta a un
+`auth` con PIN (o al canje del QR) espera a que se permita en la PC, como
+mucho 60 s; si se rechaza, llega `auth_fail`.
 
 Si falta autenticación, el servidor responde `{ t: "auth_required" }` y, si
 falla, `{ t: "auth_fail", reason }`.
 
-Con el control de acceso desactivado, `auth` autoriza al instante sin mirar el
-token ni el PIN, y `auth_query` responde `required: false`.
+Con el control de acceso desactivado, `auth` autoriza sin PIN (y reutiliza el
+token si ya tenía uno válido, sin crear otro acceso), y `auth_query` responde
+`required: false`.
 
 ### Puntero
 
 | Acción | Datos | Notas |
 |---|---|---|
 | `mouse_rel_move` | `{ dx, dy }` | Desplazamiento relativo en unidades normalizadas |
-| `mouse_move` | `{ x, y }` | Posición absoluta en píxeles de pantalla |
+| `mouse_move` | `{ x, y }` | Posición absoluta en píxeles del escritorio (negativos si hay un monitor a la izquierda o encima del principal) |
 | `mouse_hover` | `{ dx, dy }` | Alias de `mouse_rel_move` (compatibilidad) |
 | `mouse_click` | `{ button, clicks }` | `button`: `left` \| `right` \| `middle`; `clicks`: 1-3 |
 | `mouse_down` | `{ button }` | Empieza un arrastre |
@@ -49,6 +58,13 @@ token ni el PIN, y `auth_query` responde `required: false`.
 | `mouse_scroll` | `{ dx, dy }` | Unidades de deslizamiento; se convierten a rueda |
 | `zoom` | `{ steps }` | Ctrl + rueda (pinza de 2 dedos). `steps > 0` acerca |
 | `laser` | `{ on, x, y }` | Puntero láser. `x`, `y` normalizados (0..1); `on: false` lo apaga |
+
+### Varios monitores
+
+| Acción | Datos | Notas |
+|---|---|---|
+| `monitor_list` | — | `{ monitores: [{ x, y, w, h, primary }], actual }`. El principal va primero; `actual` es el índice del que tiene el puntero |
+| `monitor_goto` | `{ index }` | Lleva el puntero al centro de ese monitor. `{ error }` si no existe |
 
 ### Portapapeles
 
@@ -72,6 +88,27 @@ token ni el PIN, y `auth_query` responde `required: false`.
 | `key_type` | `{ text }` | Texto literal. `\n` = Enter, `\b` = Retroceso. Máximo 4000 caracteres |
 | `key` | `{ key, mods }` | Tecla o combinación; `mods` es una lista (`["ctrl"]`) |
 
+| `key_down` | `{ key }` | Modo mando: mantiene la tecla pulsada. Sin respuesta si va bien |
+| `key_up` | `{ key }` | Suelta una tecla mantenida |
+| `macro` | `{ pasos }` | Atajo personalizado (ver abajo) |
+
+`key_down` y `key_up` se ejecutan **en orden** (por la misma cola que los
+clics): un toque rápido no puede soltar la tecla antes de pulsarla. Como mucho
+8 teclas mantenidas a la vez; al desconectarse el celular se sueltan todas.
+
+Los pasos de `macro` son de tres tipos y se ejecutan en orden en la PC:
+
+```jsonc
+{ "tipo": "combo",  "tecla": "t", "mods": ["ctrl", "shift"] }
+{ "tipo": "texto",  "texto": "Un saludo," }
+{ "tipo": "espera", "ms": 500 }
+```
+
+Como mucho 30 pasos, 1000 caracteres por texto, 3 s por espera y 10 s de
+espera en total. Las teclas y modificadores (`ctrl`, `alt`, `shift`, `win`)
+deben ser conocidos; si algo no vale, la respuesta es `{ error }` con el motivo
+y no se ejecuta nada.
+
 `key` admite nombres (`left`, `f5`, `page_up`, `enter`, `esc`…) o un carácter
 suelto (`"a"`, `"5"`). El texto se escribe con `KEYEVENTF_UNICODE`, así que los
 acentos y símbolos funcionan con cualquier distribución de teclado.
@@ -90,16 +127,19 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 |---|---|---|
 | `ping` | `{ ts }` | `{ t: "pong", ts }` — mide la latencia |
 | `get_state` | — | Resolución de pantalla, PIN actual y segundos restantes |
-| `get_driver` | — | Diagnóstico: botón que el servidor tiene presionado |
+| `get_driver` | — | Diagnóstico: botón y teclas que el servidor tiene presionados |
 | `refresh_pin` | — | PIN y segundos restantes |
 | `comando_detener` | — | Detiene el servidor. **Requiere estar ya autorizado.** Su respuesta se envía antes que el aviso `shutdown` |
 | `set_auth` | `{ required }` | Quita o vuelve a pedir el código de acceso. **Requiere estar ya autorizado** |
+| `devices_list` | — | `{ dispositivos: [{ id, nombre, addr, creado, visto, caduca, actual, conectado }], confirmar }` |
+| `device_revoke` | `{ id }` | Retira el acceso del dispositivo cuyo `id` empieza así (mínimo 6 caracteres, coincidencia única) y lo desconecta |
+| `set_confirm` | `{ on }` | Pedir (o no) permiso en la PC a cada dispositivo nuevo |
 
 ## Mensajes del servidor
 
 | Tipo | Datos | Cuándo |
 |---|---|---|
-| `ok` | `status`, `token?`, `screen`, `pin?` | Autenticación correcta |
+| `ok` | `status`, `token?`, `device`, `screen`, `settings?` | Autenticación correcta |
 | `auth_required` | — | Hace falta autenticarse |
 | `auth_fail` | `reason` | PIN incorrecto o bloqueado |
 | `response` | `a`, `d` | Resultado de una acción (incluye `{ error }` si falló) |
@@ -109,6 +149,11 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `denied` | `reason` | Acción no permitida (por ejemplo, un espectador) |
 | `shutdown` | `reason` | El servidor se está deteniendo: el cliente no debe reconectar |
 | `pad_input` | `from`, `d` | Retransmisión a los espectadores |
+| `auth_state` | `required` | Respuesta a `auth_query` |
+| `auth_mode` | `required`, `pin?` | Alguien quitó o volvió a pedir el código |
+| `device_new` | `nombre`, `addr` | Ha entrado un dispositivo nuevo (a los demás autorizados) |
+| `revoked` | — | Se ha retirado el acceso de este dispositivo; después se cierra la conexión |
+| `keep_awake` | `active`, `remaining` | Terminó el anti-apagado |
 
 ## Reglas del servidor
 
@@ -119,6 +164,10 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 - **Tamaño máximo de mensaje**: 2 MB.
 - **Heartbeat**: 25 s a nivel de WebSocket, más el `ping` de la aplicación cada
   5 s para medir latencia.
+- **Origen**: el WebSocket rechaza (403) las conexiones cuyo `Origin` no es
+  el propio servidor. Un navegador siempre lo envía, así que otra página web
+  no puede abrir una conexión con RemotePad. Los clientes que no son
+  navegadores (pruebas, scripts) no lo envían y se aceptan.
 - Los mensajes con JSON inválido o que no son un objeto se **ignoran** sin
   cerrar la conexión.
 
@@ -134,7 +183,9 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 | `/api/qr-login` | POST | red local | Canjea la clave del QR por un token |
 | `/api/qr-refresh` | POST | red local (exige token) | Da un QR nuevo a un dispositivo ya autorizado, para recuperarse si el código caducó al escanearlo |
 | `/api/stop` | POST | **solo la PC** | Detiene el servidor |
-| `/healthz` | GET | red local | `{ "ok": true, "version": "..." }` |
+| `/api/auth` | POST | **solo la PC** | Quita o vuelve a pedir el código de acceso |
+| `/ca.crt` | GET | red local (solo con `--https`) | Autoridad local de HTTPS, para instalarla en el celular. Es la parte pública |
+| `/healthz` | GET | red local | `{ "ok": true, "version": "...", "auth_required": ... }` |
 | `/{archivo}` | GET | red local | Recursos estáticos (lista blanca de extensiones) |
 
 Los recursos estáticos se sirven con lista blanca de extensiones y
