@@ -1,5 +1,13 @@
 # Historial de cambios
 
+## Sin publicar
+
+- **Adiós a la advertencia de seguridad al arrancar.** Nuevo
+  `tools/crear_acceso_directo.py`: crea el acceso directo **RemotePad** (con
+  su icono) en el Escritorio y en el menú Inicio. Abre `cmd.exe`, que está
+  firmado por Microsoft, y este lanza `iniciar.bat`, así Windows ya no
+  pregunta «No se pudo comprobar el editor» cada vez.
+
 ## 1.11.0
 
 - **Iconos en «Programas abiertos».** Cada programa de la lista se muestra con

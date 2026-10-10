@@ -16,6 +16,10 @@ aplicación web, y el teléfono solo tiene que abrir una dirección.
 
 1. **Conecta el celular a la misma red WiFi que la PC.**
 2. En la PC, haz doble clic en **`iniciar.bat`**.
+   Si Windows muestra cada vez «Advertencia de seguridad de Abrir archivo»,
+   ejecuta una vez `python tools/crear_acceso_directo.py`: crea el acceso
+   directo **RemotePad** (con su icono) en el Escritorio y en el menú Inicio,
+   y abriéndolo desde ahí el aviso ya no sale.
 3. En la consola verás el PIN **y un código QR**:
 
    ```
@@ -397,6 +401,7 @@ apagar y reiniciar desde *Ajustes → Aprendizaje*.
 | El puntero va lento o rapidísimo | Ajustes → velocidad del puntero (1,6× es el valor por defecto). |
 | El scroll va al revés | Ajustes → desactiva *Desplazamiento natural*. |
 | Algo se quedó arrastrando | Pulsa **Soltar** (o el botón **Puntero** de la barra superior). |
+| Al abrir `iniciar.bat` sale «Advertencia de seguridad de Abrir archivo» | Los `.bat` no llevan firma digital. Ejecuta `python tools/crear_acceso_directo.py` y abre RemotePad con el acceso directo del Escritorio o del menú Inicio. |
 | "No se pudo abrir el puerto 8765" | Otro programa lo ocupa: `iniciar.bat --port 8899`. |
 | Quiero saber por qué no conecta | `python tools/diagnostico_red.py 8765` |
 | Quiero comprobar que todo está bien | Doble clic en **`probar.bat`** (todas las pruebas; `probar.bat --ci` sin mover el puntero). |
