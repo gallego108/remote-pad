@@ -54,26 +54,32 @@ def carpetas() -> list[Path]:
     return [Path(escritorio), inicio] if escritorio else [inicio]
 
 
-def crear(destino: Path, argumentos: str) -> None:
-    comando = f'/c ""{LANZADOR}"{(" " + argumentos) if argumentos else ""}"'
+def crear_enlace(destino: Path, objetivo: Path, argumentos: str, carpeta: Path,
+                 descripcion: str, ventana: int = 1) -> None:
+    """Crea (o actualiza) un acceso directo .lnk. ventana: 1 normal, 7 minimizada."""
+    if not ICONO.exists():
+        ICONO.write_bytes(ico_desde_png(ICONO_PNG.read_bytes()))
     script = (
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:RP_LNK);"
         "$s.TargetPath = $env:RP_CMD;"
         "$s.Arguments = $env:RP_ARGS;"
         "$s.WorkingDirectory = $env:RP_DIR;"
         "$s.IconLocation = $env:RP_ICO + ',0';"
-        "$s.Description = 'Iniciar RemotePad (touchpad del celular)';"
+        "$s.Description = $env:RP_DESC;"
+        "$s.WindowStyle = [int]$env:RP_WIN;"
         "$s.Save()"
     )
     entorno = dict(
-        os.environ,
-        RP_LNK=str(destino),
-        RP_CMD=str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe"),
-        RP_ARGS=comando,
-        RP_DIR=str(RAIZ),
-        RP_ICO=str(ICONO),
+        os.environ, RP_LNK=str(destino), RP_CMD=str(objetivo), RP_ARGS=argumentos,
+        RP_DIR=str(carpeta), RP_ICO=str(ICONO), RP_DESC=descripcion, RP_WIN=str(ventana),
     )
     subprocess.run(["powershell", "-NoProfile", "-Command", script], env=entorno, check=True)
+
+
+def crear(destino: Path, argumentos: str) -> None:
+    comando = f'/c ""{LANZADOR}"{(" " + argumentos) if argumentos else ""}"'
+    cmd = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe"
+    crear_enlace(destino, cmd, comando, RAIZ, "Iniciar RemotePad (touchpad del celular)")
 
 
 def main() -> int:

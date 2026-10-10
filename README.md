@@ -118,6 +118,29 @@ acceso (guarda un token propio): las próximas veces entra directo, **incluso si
 la PC o el servidor se reinician** (el acceso dura 30 días y se guarda en
 `server/tokens.json`).
 
+### Encender RemotePad desde el celular (despertador)
+
+Instálalo una vez en la PC:
+
+```bash
+python tools/instalar_despertador.py          # añade --https si usas RemotePad con --https
+```
+
+Desde entonces arranca solo con Windows, sin ventana, y casi no gasta nada:
+no toca el puntero ni el teclado. Mientras RemotePad está apagado, el
+despertador ocupa su puerto y el celular ve **«RemotePad está apagado ·
+Encender RemotePad»**. Al pulsarlo, comprueba que ese celular ya tenga acceso
+(el que guardó al entrar con el QR o el PIN), arranca el servidor con su
+consola y la pantalla se convierte sola en el touchpad.
+
+Para tenerlo como una app, en Chrome del celular abre RemotePad y elige
+**⋮ → Añadir a pantalla de inicio**. Si arrancas RemotePad a mano, el
+despertador le cede el puerto solo; al cerrarlo, lo vuelve a ocupar. Para
+quitarlo: `python tools/instalar_despertador.py --quitar`. La PC tiene que
+estar encendida y con la sesión iniciada. Conviene que la IP de la PC no
+cambie (reserva de DHCP en el router), porque el icono del celular apunta a
+ella. El registro queda en `server/despertador.log`.
+
 ### Cómo funciona el código QR
 
 El QR contiene una dirección con una **clave de un solo uso**

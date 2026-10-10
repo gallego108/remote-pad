@@ -308,6 +308,14 @@ function connect() {
 
 function scheduleReconnect() {
   state.retryTimer = setTimeout(connect, Math.min(6000, 700 * ++state.retry));
+  // Si el servidor se ha apagado y el despertador tiene el puerto, se pasa a
+  // su página («Encender RemotePad») en lugar de reintentar sin fin.
+  if (state.retry >= 3 && state.retry % 3 === 0) {
+    fetch('/__despertador/estado', { cache: 'no-store' })
+      .then((respuesta) => respuesta.json())
+      .then((datos) => { if (datos && datos.despertador) location.replace('/'); })
+      .catch(() => {});
+  }
 }
 
 function startPing() {

@@ -56,6 +56,7 @@ except ImportError as exc:  # pragma: no cover
 import auth
 import certificado
 import qr
+import despertador
 import historial
 import learning
 import native_input
@@ -79,7 +80,7 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.15.0"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 16
@@ -1892,6 +1893,10 @@ async def run(args: argparse.Namespace) -> None:
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     site = web.TCPSite(runner, args.host, args.port, ssl_context=contexto_ssl)
+    # Si el despertador tiene el puerto (servidor apagado), se le pide que lo
+    # suelte: asi se puede arrancar a mano aunque este instalado.
+    if despertador.pedir_puerto(args.port, contexto_ssl is not None):
+        log.info("El despertador ha cedido el puerto %d", args.port)
     try:
         await site.start()
     except OSError as exc:

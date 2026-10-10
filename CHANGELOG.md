@@ -1,5 +1,18 @@
 # Historial de cambios
 
+## 1.15.0
+
+- **Encender RemotePad desde el celular (despertador).** Nuevo
+  `server/despertador.py`, que se instala con
+  `python tools/instalar_despertador.py` y arranca solo con Windows (sin
+  ventana, sin tocar ratón ni teclado). Mientras RemotePad está apagado, el
+  celular ve «RemotePad está apagado · **Encender RemotePad**»: al pulsarlo,
+  si ese celular ya tiene acceso, la PC arranca el servidor y la pantalla se
+  convierte sola en el touchpad. Si el servidor se apaga mientras lo usas, la
+  app pasa sola a esa pantalla. Se puede seguir arrancando a mano: el
+  despertador le cede el puerto. Con **⋮ → Añadir a pantalla de inicio** en
+  Chrome queda como una app en el celular.
+
 ## 1.14.0
 
 - **Abrir programas desde el celular.** El panel **🗂️ Programas** tiene una

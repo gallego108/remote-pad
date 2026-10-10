@@ -178,6 +178,18 @@ acentos y símbolos funcionan con cualquier distribución de teclado.
 - Los mensajes con JSON inválido o que no son un objeto se **ignoran** sin
   cerrar la conexión.
 
+## Despertador
+
+Mientras el servidor está apagado, `server/despertador.py` ocupa el mismo puerto
+y responde con la cabecera `X-RemotePad-Despertador: 1`:
+
+| Ruta | Método | Notas |
+|---|---|---|
+| `/` | GET | Página «Encender RemotePad» (`web/despertador.html`). También sirve el manifest y los iconos; nada más |
+| `/__despertador/estado` | GET | `{ despertador: true, servidor: false }`. La app lo consulta tras varios reintentos de conexión y, si responde, pasa a la página de encender |
+| `/__despertador/encender` | POST | `{ token }`: el acceso guardado del dispositivo (se valida contra las huellas de `tokens.json`; con el acceso libre no hace falta). Mismo origen obligatorio; 8 fallos por dirección bloquean 5 minutos (429). Suelta el puerto y abre `iniciar.bat --no-browser` vía `cmd.exe` |
+| `/__despertador/soltar` | POST | Solo desde la propia PC: lo llama `app.py` al arrancar (`despertador.pedir_puerto`) para que le ceda el puerto |
+
 ## Extremos HTTP
 
 | Ruta | Método | Acceso | Descripción |
