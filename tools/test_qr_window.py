@@ -15,8 +15,17 @@ No toca el mouse ni el teclado: el controlador se sustituye por un doble.
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+# Archivos de estado temporales: la prueba no toca los accesos reales.
+_TMP = Path(tempfile.mkdtemp(prefix="remotepad_qrw_"))
+os.environ["REMOTEPAD_TOKENS"] = str(_TMP / "tokens.json")
+os.environ["REMOTEPAD_PROFILES"] = str(_TMP / "profiles.json")
+os.environ["REMOTEPAD_CONFIG"] = str(_TMP / "config.json")
+os.environ["REMOTEPAD_LEARNING"] = str(_TMP / "learning.json")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "server"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -143,83 +152,83 @@ def main() -> int:
             gateway.shutting_down = False
             gateway.stop_event = None
 
-        primera = gateway.login_key
+        primera = gateway.acceso.login_key
         check("Al arrancar hay una clave", bool(primera))
         check("La cuenta atras empieza en 3 minutos",
-              gateway.qr_seconds_left() == 180,
-              f"{gateway.qr_seconds_left()}")
+              gateway.acceso.qr_seconds_left() == 180,
+              f"{gateway.acceso.qr_seconds_left()}")
 
         # --- el caso que fallaba: escanear justo cuando el codigo cambia ------
         # El panel muestra un codigo; el celular lo escanea y, en ese mismo
         # instante, el codigo se renueva. Antes el canje se rechazaba y el
         # acceso fallaba sin explicacion.
         print("\n== Escanear justo cuando el codigo cambia ==")
-        escaneada = gateway.login_key
+        escaneada = gateway.acceso.login_key
         reloj.avanzar(servidor.QR_VALID_SECONDS + 0.1)   # se dispara la rotacion
-        gateway.rotate_qr_key_if_needed()
-        check("El codigo visible ha cambiado", gateway.login_key != escaneada)
+        gateway.acceso.rotate_qr_key_if_needed()
+        check("El codigo visible ha cambiado", gateway.acceso.login_key != escaneada)
         check("El codigo que se estaba escaneando sigue valiendo",
-              gateway.use_login_key(escaneada, "192.168.1.50") is not None,
+              gateway.acceso.canjear_clave(escaneada, "192.168.1.50"),
               "el margen de gracia no lo cubre")
         check("Pero solo se puede usar una vez",
-              gateway.use_login_key(escaneada, "192.168.1.50") is None)
+              not gateway.acceso.canjear_clave(escaneada, "192.168.1.50"))
 
         # Fuera del margen de gracia, el codigo antiguo ya no sirve.
-        antiguo = gateway.login_key
+        antiguo = gateway.acceso.login_key
         reloj.avanzar(servidor.QR_VALID_SECONDS + 0.1)
-        gateway.rotate_qr_key_if_needed()          # el antiguo pasa a gracia
+        gateway.acceso.rotate_qr_key_if_needed()          # el antiguo pasa a gracia
         reloj.avanzar(servidor.QR_GRACE_SECONDS + 1)
-        gateway.refresh_login_key()                # y ya queda fuera
+        gateway.acceso.refresh_login_key()                # y ya queda fuera
         check("Pasado el margen de gracia, el codigo antiguo no vale",
-              gateway.use_login_key(antiguo, "192.168.1.51") is None,
+              not gateway.acceso.canjear_clave(antiguo, "192.168.1.51"),
               "seguiria valiendo mas tiempo del previsto")
 
         # --- antes de caducar -------------------------------------------------
         reloj.avanzar(0.1)
-        gateway.refresh_login_key()
-        primera = gateway.login_key
+        gateway.acceso.refresh_login_key()
+        primera = gateway.acceso.login_key
         reloj.avanzar(179.0)
-        gateway.rotate_qr_key_if_needed()
+        gateway.acceso.rotate_qr_key_if_needed()
         check("A los 179 s la clave sigue siendo la misma",
-              gateway.login_key == primera)
-        check("La cuenta atras baja a 1 s", gateway.qr_seconds_left() == 1,
-              f"{gateway.qr_seconds_left()}")
+              gateway.acceso.login_key == primera)
+        check("La cuenta atras baja a 1 s", gateway.acceso.qr_seconds_left() == 1,
+              f"{gateway.acceso.qr_seconds_left()}")
 
         # La clave sigue siendo canjeable.
-        token = gateway.use_login_key(primera, "192.168.1.100")
-        check("A los 179 s la clave se puede canjear", token is not None)
+        check("A los 179 s la clave se puede canjear",
+              gateway.acceso.canjear_clave(primera, "192.168.1.100"))
 
         # --- un solo uso ------------------------------------------------------
-        segunda = gateway.login_key
+        segunda = gateway.acceso.login_key
         check("Al canjearla se genera otra al instante", segunda != primera)
         check("La clave usada ya no vale",
-              gateway.use_login_key(primera, "192.168.1.100") is None)
+              not gateway.acceso.canjear_clave(primera, "192.168.1.100"))
         check("La clave nueva si vale",
-              gateway.use_login_key(segunda, "192.168.1.100") is not None)
+              gateway.acceso.canjear_clave(segunda, "192.168.1.100"))
 
         # --- caducidad automatica --------------------------------------------
-        tercera = gateway.login_key
+        tercera = gateway.acceso.login_key
         reloj.avanzar(servidor.QR_VALID_SECONDS + 0.5)
-        gateway.rotate_qr_key_if_needed()
+        gateway.acceso.rotate_qr_key_if_needed()
         check("A los 3 minutos se renueva sola",
-              gateway.login_key != tercera,
+              gateway.acceso.login_key != tercera,
               f"clave sin cambiar: {tercera!r}")
         # Se espera tambien a que pase el margen de gracia: hasta entonces la
         # clave anterior se sigue aceptando a proposito.
         reloj.avanzar(servidor.QR_GRACE_SECONDS + 1)
         check("Una clave caducada (fuera de gracia) se rechaza",
-              gateway.use_login_key(tercera, "192.168.1.101") is None)
+              not gateway.acceso.canjear_clave(tercera, "192.168.1.101"))
         check("Tras renovar, el contador vuelve arriba",
-              gateway.qr_seconds_left() >= 150, f"{gateway.qr_seconds_left()}")
+              gateway.acceso.qr_seconds_left() >= 150, f"{gateway.acceso.qr_seconds_left()}")
 
         # --- el PIN sigue siendo independiente --------------------------------
-        pin = gateway.pin
+        pin = gateway.acceso.pin
         reloj.avanzar(100.0)
-        gateway.rotate_qr_key_if_needed()
-        check("El PIN no cambia con la rotacion del QR", gateway.pin == pin)
-        reloj.avanzar(servidor.PIN_ROTATE_SECONDS)
-        gateway.rotate_pin_if_needed()
-        check("El PIN si cambia al pasar 5 minutos", gateway.pin != pin)
+        gateway.acceso.rotate_qr_key_if_needed()
+        check("El PIN no cambia con la rotacion del QR", gateway.acceso.pin == pin)
+        reloj.avanzar(servidor.auth.PIN_ROTATE_SECONDS)
+        gateway.acceso.rotate_pin_if_needed()
+        check("El PIN si cambia al pasar 5 minutos", gateway.acceso.pin != pin)
 
         # --- la direccion del QR ---------------------------------------------
         url = gateway.login_url()

@@ -53,24 +53,15 @@ except ImportError as exc:  # pragma: no cover
     print("Instala las dependencias con:  python -m pip install -r requirements.txt")
     raise SystemExit(1)
 
+import auth
 import qr
 import learning
+import native_input
+from auth import (QR_GRACE_SECONDS, QR_VALID_SECONDS, device_name, load_config,
+                  save_config, read_json, write_json_atomic)
 
 # --------------------------------------------------------------------- ajustes
 WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
-# Ajustes que se recuerdan entre arranques (por ahora, solo el codigo de acceso).
-# Las pruebas usan REMOTEPAD_CONFIG para no tocar el archivo real.
-CONFIG_FILE = Path(
-    os.environ.get("REMOTEPAD_CONFIG")
-    or (Path(__file__).resolve().parent / "config.json")
-)
-# Accesos de los dispositivos ya autorizados: se guardan en disco para no tener
-# que volver a pedir el PIN (ni el QR) cada vez que se reinicia el servidor.
-# Las pruebas usan REMOTEPAD_TOKENS para no tocar el archivo real.
-TOKENS_FILE = Path(
-    os.environ.get("REMOTEPAD_TOKENS")
-    or (Path(__file__).resolve().parent / "tokens.json")
-)
 # Preferencias de cada dispositivo (velocidad, gestos, etc.), para no tener que
 # volver a ajustarlas: se guardan en el servidor, ligadas al acceso del celular.
 PROFILES_FILE = Path(
@@ -79,30 +70,19 @@ PROFILES_FILE = Path(
 )
 DEFAULT_PORT = 8765
 
-PIN_ROTATE_SECONDS = 300.0   # cada cuanto cambia el PIN de seguridad
-QR_VALID_SECONDS = 180.0     # cuanto vale cada codigo QR (3 minutos, un solo uso)
-
-# Margen de gracia y renovacion de los codigos QR.
-#
-# Por que existe: el codigo visible cambia cada QR_VALID_SECONDS, y si alguien
-# esta escaneando justo en ese momento, el codigo que acaba de leer dejaria de
-# valer y el acceso fallaria. Con este margen se sigue aceptando el codigo
-# anterior unos segundos despues de rotar, que es justo el tiempo que el canje
-# puede llegar tarde por el retardo de la red o del navegador.
-QR_GRACE_SECONDS = 20.0
-QR_PRE_REFRESH_SECONDS = 20.0   # antelacion con que el panel pide el siguiente
-
 # Sube al cambiar la parte web: sirve para comprobar en el celular que se esta
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
 APP_VERSION = "1.7.0"
-TOKEN_TTL_SECONDS = 30 * 24 * 3600
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 40
 # Anti-apagado: cada cuanto se mueve el raton 1 px para simular actividad.
 KEEP_AWAKE_INTERVAL = 40.0
+# Confirmacion de dispositivos nuevos: titulo de la ventana y tiempo maximo.
+CONFIRM_TITLE = "RemotePad - dispositivo nuevo"
+CONFIRM_TIMEOUT = 60.0
 
 STATIC_EXTENSIONS = {
     ".html", ".css", ".js", ".json", ".webmanifest",
@@ -128,15 +108,6 @@ def loop_time_ms() -> int:
     return int(asyncio.get_running_loop().time() * 1000)
 
 
-def new_pin() -> str:
-    return f"{secrets.randbelow(1_000_000):06d}"
-
-
-def new_login_key() -> str:
-    """Clave corta y aleatoria que viaja dentro del enlace del codigo QR."""
-    return secrets.token_urlsafe(9)
-
-
 def clamp_number(value: Any, low: float, high: float, default: float = 0.0) -> float:
     try:
         number = float(value)
@@ -147,94 +118,66 @@ def clamp_number(value: Any, low: float, high: float, default: float = 0.0) -> f
     return max(low, min(high, number))
 
 
-def load_config() -> dict:
-    """
-    Lee los ajustes guardados entre arranques.
-
-    Si el archivo no existe o esta mal, se usan los valores por defecto: es
-    preferible arrancar siempre que quedarse sin servidor por un JSON roto.
-    """
-    try:
-        datos = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except Exception as exc:
-        log.warning("No se pudo leer %s (%s): se usan los valores por defecto",
-                    CONFIG_FILE.name, exc)
-        return {}
-    return datos if isinstance(datos, dict) else {}
-
-
-def save_config(cambios: dict) -> None:
-    """Guarda ajustes sin perder los que ya hubiera."""
-    datos = load_config()
-    datos.update(cambios)
-    try:
-        CONFIG_FILE.write_text(json.dumps(datos, indent=2) + "\n",
-                               encoding="utf-8")
-    except Exception as exc:
-        log.warning("No se pudo guardar %s: %s", CONFIG_FILE.name, exc)
-
-
-def load_tokens() -> dict:
-    """
-    Accesos de dispositivos que siguen valiendo, leidos de disco.
-
-    Existen para que reiniciar el servidor NO obligue a todos los celulares a
-    volver a escribir el PIN: el dispositivo guarda su token y entra solo. Si el
-    archivo no esta o esta mal, se empieza de cero (solo se pedira el PIN).
-    """
-    try:
-        datos = json.loads(TOKENS_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return {}
-    except Exception as exc:
-        log.warning("No se pudo leer %s (%s): se pedira el PIN de nuevo",
-                    TOKENS_FILE.name, exc)
-        return {}
-    if not isinstance(datos, dict):
-        return {}
-    corte = time.time() - TOKEN_TTL_SECONDS
-    vivos: dict = {}
-    for token, creado in datos.items():
-        try:
-            cuando = float(creado)
-        except (TypeError, ValueError):
-            continue
-        if cuando >= corte:
-            vivos[str(token)] = cuando
-    return vivos
-
-
-def save_tokens(tokens: dict) -> None:
-    """Guarda los accesos vigentes. Si falla, se sigue funcionando igual."""
-    try:
-        TOKENS_FILE.write_text(json.dumps(tokens, indent=2) + "\n",
-                               encoding="utf-8")
-    except Exception as exc:
-        log.warning("No se pudieron guardar los accesos: %s", exc)
+# Limites de las preferencias que guarda cada dispositivo: sin ellos un cliente
+# podia llenar profiles.json con mensajes de 2 MB, uno detras de otro.
+MAX_SETTINGS_KEYS = 60
+MAX_SETTINGS_KEY_LEN = 40
+MAX_SETTINGS_STR_LEN = 8000
+MAX_SETTINGS_BYTES = 32_000
 
 
 def load_profiles() -> dict:
-    """Preferencias guardadas de cada dispositivo (por token)."""
-    try:
-        datos = json.loads(PROFILES_FILE.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+    """
+    Preferencias guardadas de cada dispositivo, por huella de su acceso.
+
+    Las versiones anteriores las guardaban con el token EN CLARO como clave:
+    se convierten a la huella (la misma que usa tokens.json), asi el archivo
+    deja de contener secretos.
+    """
+    datos = read_json(PROFILES_FILE, "se usan los ajustes del celular")
+    if not isinstance(datos, dict):
         return {}
-    except Exception as exc:
-        log.warning("No se pudo leer %s (%s): se usan los ajustes del celular",
-                    PROFILES_FILE.name, exc)
-        return {}
-    return datos if isinstance(datos, dict) else {}
+    perfiles: dict = {}
+    migrado = False
+    for clave, perfil in datos.items():
+        if not isinstance(perfil, dict):
+            continue
+        if not auth.is_hash(clave):
+            clave = auth.token_hash(clave)
+            migrado = True
+        perfiles[clave] = perfil
+    if migrado:
+        save_profiles(perfiles)
+    return perfiles
 
 
 def save_profiles(perfiles: dict) -> None:
     """Guarda las preferencias de los dispositivos (best effort)."""
-    try:
-        PROFILES_FILE.write_text(json.dumps(perfiles, indent=2) + "\n",
-                                 encoding="utf-8")
-    except Exception as exc:
-        log.warning("No se pudieron guardar los perfiles: %s", exc)
+    write_json_atomic(PROFILES_FILE, perfiles)
+
+
+def clean_settings(ajustes: Any) -> Optional[dict]:
+    """
+    Valida las preferencias que manda el celular.
+
+    Solo valores simples, con nombres y textos acotados. Devuelve None si el
+    conjunto no es valido o es demasiado grande.
+    """
+    if not isinstance(ajustes, dict) or len(ajustes) > MAX_SETTINGS_KEYS:
+        return None
+    limpio: dict = {}
+    for clave, valor in ajustes.items():
+        if not isinstance(clave, str) or not clave or len(clave) > MAX_SETTINGS_KEY_LEN:
+            continue
+        if isinstance(valor, float) and (math.isnan(valor) or math.isinf(valor)):
+            continue
+        if isinstance(valor, str) and len(valor) > MAX_SETTINGS_STR_LEN:
+            continue
+        if isinstance(valor, (bool, int, float, str)):
+            limpio[clave] = valor
+    if len(json.dumps(limpio)) > MAX_SETTINGS_BYTES:
+        return None
+    return limpio
 
 
 def local_ip() -> str:
@@ -279,6 +222,16 @@ def origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
     except ValueError:
         return False
     return parsed.scheme in ("http", "https") and parsed.netloc.lower() == host.lower()
+
+
+def mostrar_ventanas() -> bool:
+    """
+    Se pueden abrir ventanas en la PC (la pregunta de confirmacion).
+
+    Las pruebas lo desactivan con REMOTEPAD_SIN_VENTANAS=1 y responden por la
+    consola, para no dejar ventanas abiertas ni depender de un escritorio.
+    """
+    return native_input.available() and not os.environ.get("REMOTEPAD_SIN_VENTANAS")
 
 
 def is_private(addr: str) -> bool:
@@ -383,8 +336,11 @@ class Client:
     ws: web.WebSocketResponse
     client_id: str
     kind: str = "auth"          # auth | viewer
-    token: Optional[str] = None
+    # Huella del acceso del dispositivo (None = aun no autorizado; "" para el
+    # espectador). El token en claro nunca se guarda en el servidor.
+    device: Optional[str] = None
     addr: str = "?"
+    nombre: str = "Dispositivo"   # sacado del User-Agent del navegador
     rate_used: int = 0
     rate_window: int = 0
     last_seen: float = field(default_factory=time.monotonic)
@@ -478,25 +434,21 @@ class Gateway:
         self.shutting_down = False
         self._parada_pedida: Optional[str] = None
 
-        self.pin = new_pin()
-        self._pin_generated = time.monotonic()
-        # Con False, cualquiera de la red entra sin PIN ni QR: lo activan
-        # --no-auth, el comando "auth off" de la consola o el boton de Ajustes.
-        self.auth_required = True
-        self.login_key = new_login_key()      # clave del enlace del codigo QR
-        self.login_key_generated = self._pin_generated
-        # Claves anteriores que se siguen aceptando unos segundos (margen de
-        # gracia): (clave, momento de la rotacion, ya_usada).
-        self._key_history: "deque[tuple[str, float, bool]]" = deque()
-        self._key_failures: dict[str, list[float]] = {}
-        # Accesos de dispositivos ya autorizados. Se leen de disco para que
-        # reiniciar el servidor no obligue a volver a escribir el PIN.
-        self._tokens: dict[str, float] = load_tokens()
-        if self._tokens:
-            log.info("Accesos recordados de %d dispositivo(s)", len(self._tokens))
-        # Preferencias de cada dispositivo (por token).
+        # PIN, codigos QR, intentos fallidos y dispositivos autorizados (estos
+        # se leen de disco para que reiniciar no obligue a volver a entrar).
+        # El aviso se resuelve al llamarlo: las pruebas sustituyen _enqueue.
+        self.acceso = auth.ControlAcceso(avisar=lambda payload: self.broadcast(payload))
+        if len(self.acceso.dispositivos):
+            log.info("Accesos recordados de %d dispositivo(s)",
+                     len(self.acceso.dispositivos))
+        # Preferencias de cada dispositivo (por huella). Se descartan las de
+        # accesos que ya no existen (caducados o retirados).
         self._profiles: dict[str, dict] = load_profiles()
-        self._pin_failures: dict[str, list[float]] = {}
+        self._podar_perfiles()
+        # Confirmacion en la PC de cada dispositivo NUEVO (opcional).
+        self.confirmar_nuevos = bool(load_config().get("confirm_new_devices", False))
+        self._confirmaciones: "deque[asyncio.Future]" = deque()
+        self._poda_fallos = 0.0
         self.clients: set[Client] = set()
         # Puntero laser para presentaciones (se abre bajo demanda).
         self.laser = LaserPointer()
@@ -540,95 +492,6 @@ class Gateway:
             self.stop_event.set()
         return True
 
-    def rotate_pin_if_needed(self) -> None:
-        if time.monotonic() - self._pin_generated < PIN_ROTATE_SECONDS:
-            return
-        self.pin = new_pin()
-        self._pin_generated = time.monotonic()
-        log.info("Nuevo PIN de seguridad: %s", self.pin)
-        self.broadcast({"t": "pin", "pin": self.pin})
-
-    def rotate_qr_key_if_needed(self) -> None:
-        """
-        El codigo QR vale 3 minutos.
-
-        Pasado ese tiempo se genera otro automaticamente, de modo que el panel
-        de la PC siempre muestra un codigo vigente. El anterior NO se invalida
-        de golpe: queda unos segundos en el margen de gracia por si el celular
-        estaba escaneandolo justo en ese momento.
-        """
-        if self.shutting_down:
-            return
-        if not self.auth_required:
-            return          # sin control de acceso el QR no hace falta
-        if time.monotonic() - self.login_key_generated < QR_VALID_SECONDS:
-            return
-        self.refresh_login_key()
-
-    def refresh_login_key(self, internal: bool = False) -> str:
-        """
-        Genera un QR nuevo.
-
-        Si `internal` es False (rotacion automatica, boton del panel), la clave
-        anterior pasa al margen de gracia: asi no falla un canje que llego
-        tarde por unos segundos. Si es True, la rotacion viene de haber canjeado
-        o reservado una clave, y entonces la anterior se descarta directamente
-        (guardarla en el historial solo serviria para reutilizarla).
-        """
-        ahora = time.monotonic()
-        if self.login_key and not internal:
-            self._key_history.append((self.login_key, ahora, False))
-        self._podar_historial(ahora)
-        self.login_key = new_login_key()
-        self.login_key_generated = ahora
-        self.broadcast({"t": "qr_key", "key": self.login_key})
-        return self.login_key
-
-    def _podar_historial(self, ahora: Optional[float] = None) -> None:
-        """Descarta las claves antiguas que ya pasaron el margen de gracia."""
-        if ahora is None:
-            ahora = time.monotonic()
-        while self._key_history:
-            clave, nacida, usada = self._key_history[0]
-            if usada or (ahora - nacida) > QR_GRACE_SECONDS:
-                self._key_history.popleft()
-            else:
-                break
-
-    def _marcar_clave_usada(self, clave: str) -> None:
-        """
-        Invalida una clave ya canjeada, este en el historial o sea la vigente.
-
-        Una clave usada no se conserva en el margen de gracia: si se guardara,
-        un segundo intento con el mismo enlace volveria a encontrar la clave y
-        habria que rechazarlo expresamente. Se descarta y punto.
-        """
-        self._key_history = deque(
-            (c, t, u) for c, t, u in self._key_history if c != clave
-        )
-        if self.login_key == clave:
-            self.refresh_login_key(internal=True)
-
-    def reservar_clave_actual(self) -> str:
-        """
-        Entrega una clave nueva para un cliente ya autorizado (recuperacion).
-
-        La clave vigente se marca como usada (para que el enlace que ya circulo
-        no sirva) y se devuelve una NUEVA, que solo conoce este cliente: como
-        no se muestra en ningun panel hasta que este la canjee, no hay carrera
-        posible y el canje funciona siempre.
-        """
-        self._podar_historial()
-        if self.login_key:
-            self._marcar_clave_usada(self.login_key)
-        else:
-            self.refresh_login_key(internal=True)
-        return self.login_key
-
-    def qr_seconds_left(self) -> int:
-        remaining = QR_VALID_SECONDS - (time.monotonic() - self.login_key_generated)
-        return max(0, int(round(remaining)))
-
     def login_url(self) -> str:
         """
         Direccion que debe contener el QR.
@@ -636,135 +499,148 @@ class Gateway:
         Tiene que ser la IP de la red local: 127.0.0.1 funcionaria solo en la
         propia PC, pero en el celular apuntaria a si mismo y no abriria nada.
         """
-        return f"http://{self.lan_host}:{self.port}/?k={self.login_key}"
+        return f"http://{self.lan_host}:{self.port}/?k={self.acceso.login_key}"
 
-    def use_login_key(self, key: Any, addr: str = "?") -> Optional[str]:
+    def keep_pin_fresh(self) -> None:
+        self.acceso.rotate_pin_if_needed()
+        if not self.shutting_down:
+            self.acceso.rotate_qr_key_if_needed()
+        ahora = time.monotonic()
+        if ahora - self._poda_fallos >= 60.0:
+            self._poda_fallos = ahora
+            self.acceso.prune_failures()
+            if self.acceso.dispositivos.podar():
+                self._podar_perfiles()
+        self._discard_stale()
+
+    # ------------------------------------------------------------ dispositivos
+    def _podar_perfiles(self) -> None:
+        """Olvida las preferencias de accesos que ya no existen."""
+        huerfanos = [h for h in self._profiles if h not in self.acceso.dispositivos]
+        for huella in huerfanos:
+            del self._profiles[huella]
+        if huerfanos:
+            save_profiles(self._profiles)
+
+    async def autorizar_dispositivo(self, nombre: str, addr: str) -> Optional[tuple[str, str]]:
         """
-        Canjea la clave del QR por un token.
+        Da acceso a un dispositivo NUEVO (tras acertar el PIN o el QR).
 
-        Acepta la clave vigente y tambien las anteriores mientras esten dentro
-        del margen de gracia: asi, si el codigo se renovo mientras el celular
-        lo escaneaba, el acceso no falla. Cada clave sirve una sola vez.
-
-        Con el control de acceso desactivado se entrega token sin mirar la
-        clave: el QR no es necesario.
+        Si esta activada la confirmacion, la PC pregunta antes. Devuelve
+        (token, huella), o None si se rechaza. Siempre se avisa en la consola
+        y a los demas dispositivos conectados: asi una entrada inesperada no
+        pasa desapercibida.
         """
-        if not self.auth_required:
-            return self.issue_token()
-        if not key:
+        if self.confirmar_nuevos and not await self.pedir_confirmacion(nombre, addr):
+            log.warning("Acceso RECHAZADO en la PC: %s (%s)", nombre, addr)
             return None
+        token, huella = self.acceso.dispositivos.emitir(nombre, addr)
+        print("\n" + "-" * 58)
+        print(f"   NUEVO DISPOSITIVO CON ACCESO: {nombre} ({addr})")
+        print(f"   Si no lo reconoces:  revocar {huella[:8]}")
+        print("-" * 58)
+        self.broadcast({"t": "device_new", "nombre": nombre, "addr": addr},
+                       only_kind="auth")
+        return token, huella
 
-        attempts = [t for t in self._key_failures.get(addr, []) if time.time() - t < 300]
-        self._key_failures[addr] = attempts
-        if len(attempts) >= 10:
-            return None
+    async def pedir_confirmacion(self, nombre: str, addr: str) -> bool:
+        """
+        Pregunta en la PC si se deja entrar a un dispositivo nuevo.
 
-        candidata = str(key)
-        usada = False
+        Se puede responder en la ventana que aparece o escribiendo si / no en
+        la consola; lo primero que llegue manda. Sin respuesta en
+        CONFIRM_TIMEOUT segundos, se rechaza.
+        """
+        loop = asyncio.get_running_loop()
+        futuro: asyncio.Future = loop.create_future()
+        self._confirmaciones.append(futuro)
+        print("\n" + "!" * 58)
+        print(f"   {nombre} ({addr}) quiere manejar esta PC.")
+        print("   Escribe  si  para permitirlo o  no  para rechazarlo.")
+        print("!" * 58)
 
-        if self.login_key and hmac.compare_digest(candidata, self.login_key):
-            self._key_failures.pop(addr, None)
-            self._marcar_clave_usada(candidata)
-            return self.issue_token()
+        ventana = None
+        if mostrar_ventanas():
+            texto = (f"{nombre} ({addr}) quiere manejar esta PC con RemotePad.\n\n"
+                     "¿Permitir el acceso?")
+            ventana = loop.run_in_executor(
+                None, native_input.ask_yes_no, CONFIRM_TITLE, texto, CONFIRM_TIMEOUT
+            )
 
-        # Margen de gracia: claves recien rotadas, aun sin usar.
-        self._podar_historial()
-        for anterior, _nacida, ya_usada in self._key_history:
-            if hmac.compare_digest(candidata, anterior):
-                usada = ya_usada
-                break
-        else:
-            attempts.append(time.time())
-            return None
+            def _desde_ventana(tarea: asyncio.Future) -> None:
+                if futuro.done() or tarea.cancelled() or tarea.exception():
+                    return
+                respuesta = tarea.result()
+                if respuesta is not None:
+                    futuro.set_result(bool(respuesta))
 
-        if usada:
-            attempts.append(time.time())
-            return None
-
-        self._key_failures.pop(addr, None)
-        self._marcar_clave_usada(candidata)
-        return self.issue_token()
-
-    def pin_seconds_left(self) -> int:
-        remaining = PIN_ROTATE_SECONDS - (time.monotonic() - self._pin_generated)
-        return max(0, int(remaining))
-
-    def _prune_tokens(self) -> None:
-        cutoff = time.time() - TOKEN_TTL_SECONDS
-        vivos = {t: c for t, c in self._tokens.items() if c >= cutoff}
-        if len(vivos) != len(self._tokens):
-            self._tokens = vivos
-            save_tokens(self._tokens)
-
-    def token_is_valid(self, token: Optional[str]) -> bool:
-        if not token:
+            ventana.add_done_callback(_desde_ventana)
+        try:
+            return await asyncio.wait_for(asyncio.shield(futuro), CONFIRM_TIMEOUT)
+        except asyncio.TimeoutError:
+            print("   Sin respuesta: acceso rechazado.")
             return False
-        self._prune_tokens()
-        for known in self._tokens:
-            if hmac.compare_digest(known, token):
+        finally:
+            try:
+                self._confirmaciones.remove(futuro)
+            except ValueError:
+                pass
+            if ventana is not None and not ventana.done():
+                # Se respondio en la consola: se cierra la ventana pendiente.
+                native_input.dismiss_question(CONFIRM_TITLE)
+
+    def responder_confirmacion(self, permitir: bool) -> bool:
+        """Respuesta desde la consola a la pregunta mas antigua pendiente."""
+        for futuro in list(self._confirmaciones):
+            if not futuro.done():
+                futuro.set_result(permitir)
                 return True
         return False
 
-    def issue_token(self) -> str:
-        token = secrets.token_urlsafe(24)
-        self._tokens[token] = time.time()
-        self._prune_tokens()
-        # Se guarda en disco: el dispositivo no tendra que volver a pedir el PIN
-        # aunque el servidor se reinicie (hasta que caduque, 30 dias).
-        save_tokens(self._tokens)
-        return token
+    def set_confirmar_nuevos(self, activo: bool, motivo: str = "") -> None:
+        self.confirmar_nuevos = bool(activo)
+        save_config({"confirm_new_devices": self.confirmar_nuevos})
+        log.info("Confirmacion de dispositivos nuevos %s%s",
+                 "ACTIVADA" if activo else "desactivada",
+                 f" {motivo}".rstrip())
 
-    def _too_many_failures(self, addr: str) -> bool:
-        attempts = [t for t in self._pin_failures.get(addr, []) if time.time() - t < 300]
-        self._pin_failures[addr] = attempts
-        return len(attempts) >= 8
+    def lista_dispositivos(self, actual: Optional[str] = None) -> list[dict]:
+        """Dispositivos con acceso, marcando el que pregunta y los conectados."""
+        conectados = {c.device for c in self.clients if c.kind == "auth" and c.device}
+        filas = []
+        for fila in self.acceso.dispositivos.listar():
+            huella = fila.pop("huella")
+            fila["actual"] = huella == actual
+            fila["conectado"] = huella in conectados
+            filas.append(fila)
+        return filas
 
-    def _register_failure(self, addr: str) -> None:
-        self._pin_failures.setdefault(addr, []).append(time.time())
-
-    def check_pin(self, pin: Any, addr: str = "?") -> bool:
-        # Con el control de acceso desactivado entra cualquiera de la red: es
-        # comodo para probar, pero cualquiera en tu WiFi puede manejar la PC.
-        if not self.auth_required:
-            return True
-        if self._too_many_failures(addr):
-            return False
-        if hmac.compare_digest(str(pin or ""), self.pin):
-            self._pin_failures.pop(addr, None)
-            return True
-        self._register_failure(addr)
-        return False
-
-    def set_auth_required(self, activo: bool, motivo: str = "") -> bool:
+    async def revocar_dispositivo(self, prefijo: str, motivo: str = "") -> Optional[str]:
         """
-        Activa o desactiva el codigo de acceso (PIN y QR) en caliente.
+        Retira el acceso de un dispositivo y lo desconecta si esta conectado.
 
-        Devuelve True si el estado ha cambiado. Al desactivarlo se avisa a los
-        celulares conectados para que lo sepan, y al activarlo se avisa tambien
-        para que no se queden creyendo que sigue libre.
+        Devuelve el nombre del dispositivo retirado, o None si el identificador
+        no corresponde a uno (y solo uno).
         """
-        if self.auth_required == activo:
-            return False
-        self.auth_required = activo
-        # Se recuerda entre arranques: si lo quitas, sigue quitado al reiniciar.
-        save_config({"auth_required": activo})
-        if activo:
-            # Se genera un PIN nuevo, para que no valga uno visto antes.
-            self.pin = new_pin()
-            self._pin_generated = time.monotonic()
-            log.info("Control de acceso ACTIVADO%s (PIN %s)",
-                     f" {motivo}".rstrip(), self.pin)
-            self.broadcast({"t": "auth_mode", "required": True, "pin": self.pin})
-        else:
-            log.warning("Control de acceso DESACTIVADO%s: cualquiera en tu "
-                        "WiFi puede manejar la PC", f" {motivo}".rstrip())
-            self.broadcast({"t": "auth_mode", "required": False})
-        return True
-
-    def keep_pin_fresh(self) -> None:
-        self.rotate_pin_if_needed()
-        self.rotate_qr_key_if_needed()
-        self._discard_stale()
+        nombres = {f["huella"]: f["nombre"] for f in self.acceso.dispositivos.listar()}
+        retirados = self.acceso.dispositivos.revocar(prefijo)
+        if not retirados:
+            return None
+        huella = retirados[0]
+        self._profiles.pop(huella, None)
+        save_profiles(self._profiles)
+        log.warning("Acceso RETIRADO a %s%s", nombres.get(huella, huella[:8]),
+                    f" {motivo}".rstrip())
+        for client in list(self.clients):
+            if client.device == huella:
+                self._enqueue(client, {"t": "revoked"})
+                # Un instante para que el aviso salga antes de cortar.
+                await asyncio.sleep(0.15)
+                try:
+                    await client.ws.close()
+                except Exception:
+                    pass
+        return nombres.get(huella, huella[:8])
 
     def keep_awake_tick(self) -> None:
         """
@@ -883,7 +759,7 @@ class Gateway:
         suaves en lugar de a saltos.
         """
         loop = asyncio.get_running_loop()
-        last_shown_key = self.login_key
+        last_shown_key = self.acceso.login_key
         while True:
             self.keep_pin_fresh()
             self.keep_awake_tick()
@@ -894,8 +770,8 @@ class Gateway:
             # si hay algun navegador conectado (el panel ya lo muestra y
             # redibujar no haria mas que llenar la consola de codigos).
             if (self.show_qr_console and not self.clients
-                    and self.login_key != last_shown_key):
-                last_shown_key = self.login_key
+                    and self.acceso.login_key != last_shown_key):
+                last_shown_key = self.acceso.login_key
                 print_qr_block(self.console_host, self.port, last_shown_key,
                                when="codigo nuevo")
 
@@ -1099,17 +975,13 @@ class Gateway:
             # Preferencias del dispositivo (velocidad, gestos...). Se guardan en
             # el servidor para no tener que reajustarlas si el navegador borra
             # sus datos, o si se entra desde el mismo celular otra vez.
-            ajustes = data.get("settings")
-            if not isinstance(ajustes, dict) or not client.token:
+            limpio = clean_settings(data.get("settings"))
+            if limpio is None or not client.device:
                 return {"error": "ajustes invalidos"}
-            limpio = {
-                str(clave): valor
-                for clave, valor in ajustes.items()
-                if isinstance(clave, str)
-                and isinstance(valor, (bool, int, float, str))
-            }
-            self._profiles[client.token] = limpio
-            save_profiles(self._profiles)
+            # Solo se escribe en disco si algo cambia.
+            if self._profiles.get(client.device) != limpio:
+                self._profiles[client.device] = limpio
+                save_profiles(self._profiles)
             return {"ok": True}
 
         if action == "learning":
@@ -1176,17 +1048,37 @@ class Gateway:
         if action == "get_state":
             return {
                 "screen": list(c.refresh_screen_size()),
-                "pin": self.pin,
-                "pin_seconds": self.pin_seconds_left(),
-                "auth_required": self.auth_required,
+                "pin": self.acceso.pin,
+                "pin_seconds": self.acceso.pin_seconds_left(),
+                "auth_required": self.acceso.auth_required,
             }
 
         if action == "set_auth":
             # Solo un dispositivo ya autorizado puede quitar el codigo de
             # acceso (la comprobacion previa a este bloque lo garantiza).
             activo = bool(data.get("required", True))
-            cambiado = self.set_auth_required(activo, f"peticion de {client.addr}")
-            return {"ok": True, "required": self.auth_required, "cambiado": cambiado}
+            cambiado = self.acceso.set_auth_required(activo, f"peticion de {client.addr}")
+            return {"ok": True, "required": self.acceso.auth_required, "cambiado": cambiado}
+
+        if action == "devices_list":
+            # Dispositivos con acceso, para gestionarlos desde Ajustes.
+            return {
+                "dispositivos": self.lista_dispositivos(client.device),
+                "confirmar": self.confirmar_nuevos,
+            }
+
+        if action == "device_revoke":
+            prefijo = str(data.get("id", ""))[:64]
+            nombre = await self.revocar_dispositivo(prefijo, f"desde {client.addr}")
+            if nombre is None:
+                return {"error": "no se encontro ese dispositivo"}
+            return {"ok": True, "nombre": nombre,
+                    "dispositivos": self.lista_dispositivos(client.device)}
+
+        if action == "set_confirm":
+            # Pedir (o no) confirmacion en la PC para cada dispositivo nuevo.
+            self.set_confirmar_nuevos(bool(data.get("on")), f"desde {client.addr}")
+            return {"ok": True, "confirmar": self.confirmar_nuevos}
 
         if action == "get_driver":
             # Diagnostico: que boton tiene presionado el servidor ahora mismo.
@@ -1196,7 +1088,7 @@ class Gateway:
             }
 
         if action == "refresh_pin":
-            return {"pin": self.pin, "pin_seconds": self.pin_seconds_left()}
+            return {"pin": self.acceso.pin, "pin_seconds": self.acceso.pin_seconds_left()}
 
         if action == "comando_detener":
             # Solo un dispositivo ya autorizado puede parar el servicio: la
@@ -1211,31 +1103,35 @@ class Gateway:
         return {"error": f"accion desconocida: {action}"}
 
     # ----------------------------------------------------------- autenticacion
-    def auth_payload(self, client: Client, con_token: bool = False) -> dict:
+    def auth_payload(self, client: Client, token: Optional[str] = None) -> dict:
         """
         Respuesta de acceso correcto.
 
-        Incluye las preferencias guardadas del dispositivo (si las tiene) para
-        que no haya que volver a ajustarlas tras limpiar los datos del navegador.
+        `token` solo va cuando se acaba de crear el acceso: es la unica vez que
+        sale del servidor (despues solo se guarda su huella). Incluye las
+        preferencias guardadas del dispositivo (si las tiene) para que no haya
+        que volver a ajustarlas tras limpiar los datos del navegador.
         """
         payload: dict = {
             "t": "ok",
             "status": "auth",
             "id": client.client_id,
             "screen": list(self.controller.screen_size),
+            "device": (client.device or "")[:8],
         }
-        if con_token and client.token:
-            payload["token"] = client.token
-        perfil = self._profiles.get(client.token or "")
+        if token:
+            payload["token"] = token
+        perfil = self._profiles.get(client.device or "")
         if isinstance(perfil, dict) and perfil:
             payload["settings"] = perfil
         return payload
 
-    def handle_auth(self, client: Client, data: dict) -> Optional[dict]:
-        token = data.get("token")
-        if self.token_is_valid(token):
-            client.token = str(token)
+    async def handle_auth(self, client: Client, data: dict) -> dict:
+        huella = self.acceso.dispositivos.validar(data.get("token"))
+        if huella:
+            client.device = huella
             client.kind = "auth"
+            self.acceso.dispositivos.visto(huella, client.addr, client.nombre)
             log.info("Autorizado por token: %s", client.addr)
             return self.auth_payload(client)
 
@@ -1247,11 +1143,14 @@ class Gateway:
                         client.addr)
 
         pin = data.get("pin")
-        if pin and self.check_pin(pin, client.addr):
-            client.token = self.issue_token()
+        if pin and self.acceso.check_pin(pin, client.addr):
+            emitido = await self.autorizar_dispositivo(client.nombre, client.addr)
+            if emitido is None:
+                return {"t": "auth_fail", "reason": "La PC no ha permitido el acceso"}
+            token, client.device = emitido
             client.kind = "auth"
             log.info("Autorizado con el PIN: %s", client.addr)
-            return self.auth_payload(client, con_token=True)
+            return self.auth_payload(client, token=token)
 
         if pin:
             # El PIN vigente no se escribe aqui: el registro puede acabar en un
@@ -1273,7 +1172,8 @@ class Gateway:
         await ws.prepare(request)
 
         addr = request.remote or "?"
-        client = Client(ws=ws, client_id=secrets.token_hex(4), addr=addr)
+        client = Client(ws=ws, client_id=secrets.token_hex(4), addr=addr,
+                        nombre=device_name(request.headers.get("User-Agent", "")))
         self.start_sender(client)
         log.info("Conexion desde %s", addr)
 
@@ -1312,7 +1212,7 @@ class Gateway:
             data = {}
 
         # --- todavia sin autenticar -----------------------------------------
-        if client.kind == "auth" and client.token is None:
+        if client.kind == "auth" and client.device is None:
             if action == "viewer":
                 # El modo espectador ve el PIN: solo para la propia PC. Antes se
                 # aceptaba desde cualquier equipo de la red, y bastaba un mensaje
@@ -1322,28 +1222,35 @@ class Gateway:
                     self._enqueue(client, {"t": "denied", "reason": "solo en la PC"})
                     return
                 client.kind = "viewer"
-                client.token = ""
+                client.device = ""
                 self.clients.add(client)
                 self._enqueue(
                     client,
-                    {"t": "ok", "status": "viewer", "id": client.client_id, "pin": self.pin},
+                    {"t": "ok", "status": "viewer", "id": client.client_id, "pin": self.acceso.pin},
                 )
                 return
 
             # Con el control de acceso desactivado se autoriza al instante: el
-            # celular entra sin PIN ni QR.
-            if action == "auth" and not self.auth_required:
-                client.token = self.issue_token()
+            # celular entra sin PIN ni QR. Si ya tiene un acceso valido se usa
+            # ese (antes se creaba uno nuevo en cada reconexion y tokens.json
+            # crecia sin parar).
+            if (action == "auth" and not self.acceso.auth_required
+                    and not self.acceso.dispositivos.validar(data.get("token"))):
+                emitido = await self.autorizar_dispositivo(client.nombre, client.addr)
+                if emitido is None:
+                    self._enqueue(client, {"t": "auth_fail",
+                                           "reason": "La PC no ha permitido el acceso"})
+                    return
+                token, client.device = emitido
                 client.kind = "auth"
                 self.clients.add(client)
                 log.info("Autorizado sin codigo (control de acceso "
                          "desactivado): %s", client.addr)
-                self._enqueue(client, self.auth_payload(client, con_token=True))
+                self._enqueue(client, self.auth_payload(client, token=token))
                 return
 
             if action == "auth":
-                response = self.handle_auth(client, data)
-                assert response is not None
+                response = await self.handle_auth(client, data)
                 if response.get("status") == "auth":
                     self.clients.add(client)
                 self._enqueue(client, response)
@@ -1357,7 +1264,7 @@ class Gateway:
                 # la PC.
                 self._enqueue(client, {
                     "t": "auth_state",
-                    "required": self.auth_required,
+                    "required": self.acceso.auth_required,
                 })
                 return
 
@@ -1384,10 +1291,12 @@ class Gateway:
             # Un dispositivo ya autorizado puede volver a presentar sus
             # credenciales (por ejemplo, una copia antigua de la app que repite
             # la autenticacion al reconectar). Se trata como un reintento
-            # idempotente en lugar de devolver "accion desconocida: auth".
-            response = self.handle_auth(client, data)
-            if response.get("status") == "auth":
-                self.clients.add(client)
+            # idempotente en lugar de devolver "accion desconocida: auth". Ya
+            # esta dentro: no se crea otro acceso, se le confirma el que tiene.
+            if self.acceso.dispositivos.validar(data.get("token")):
+                response = await self.handle_auth(client, data)
+            else:
+                response = self.auth_payload(client)
             self._enqueue(client, response)
             return
         try:
@@ -1435,10 +1344,10 @@ def dashboard_html(gateway: Gateway, url: str) -> str:
     template = (WEB_ROOT / "qr.html").read_text(encoding="utf-8")
     data = {
         "url": url,
-        "key": gateway.login_key,
-        "pin": gateway.pin,
-        "seconds": gateway.qr_seconds_left(),
-        "auth_required": gateway.auth_required,
+        "key": gateway.acceso.login_key,
+        "pin": gateway.acceso.pin,
+        "seconds": gateway.acceso.qr_seconds_left(),
+        "auth_required": gateway.acceso.auth_required,
         "matrix": qr.encode(url, "M"),
     }
     # La matriz y los datos van como JSON incrustado: la pagina se dibuja en
@@ -1473,7 +1382,7 @@ def build_app(gateway: Gateway) -> web.Application:
         if key:
             # Comprobacion previa: si la clave ya no vale se avisa en la propia
             # pantalla, sin necesidad de que el cliente haga la peticion.
-            if hmac.compare_digest(str(key), gateway.login_key):
+            if hmac.compare_digest(str(key), gateway.acceso.login_key):
                 estado = "ok"
             else:
                 estado = "caducado"
@@ -1540,8 +1449,7 @@ def build_app(gateway: Gateway) -> web.Application:
             payload = {}
         key = (payload or {}).get("key", "")
         addr = request.remote or "?"
-        token = gateway.use_login_key(key, addr)
-        if token is None:
+        if not gateway.acceso.canjear_clave(key, addr):
             # Nota: si el celular ha podido llegar hasta aqui, la red y el
             # firewall funcionan. Lo unico que falla es que ese codigo ya no
             # vale (pasaron los 3 minutos o ya se uso).
@@ -1554,9 +1462,17 @@ def build_app(gateway: Gateway) -> web.Application:
             return web.json_response(
                 {"ok": False, "error": "El codigo QR caduco"}, status=403
             )
-        log.info("Autorizado con el QR: %s", addr) if gateway.auth_required else \
+        nombre = device_name(request.headers.get("User-Agent", ""))
+        emitido = await gateway.autorizar_dispositivo(nombre, addr)
+        if emitido is None:
+            return web.json_response(
+                {"ok": False, "error": "La PC no ha permitido el acceso"}, status=403
+            )
+        if gateway.acceso.auth_required:
+            log.info("Autorizado con el QR: %s", addr)
+        else:
             log.info("Autorizado sin codigo (control de acceso desactivado): %s", addr)
-        return web.json_response({"ok": True, "token": token})
+        return web.json_response({"ok": True, "token": emitido[0]})
 
     async def qr_refresh(request: web.Request) -> web.StreamResponse:
         """
@@ -1575,19 +1491,19 @@ def build_app(gateway: Gateway) -> web.Application:
         except Exception:
             payload = {}
         token = str((payload or {}).get("token", ""))
-        if not gateway.token_is_valid(token):
+        if not gateway.acceso.dispositivos.validar(token):
             log.warning("Recuperacion de QR rechazada desde %s: token no valido",
                         request.remote)
             return web.json_response({"ok": False, "error": "no autorizado"},
                                      status=403)
 
-        clave = gateway.reservar_clave_actual()
+        clave = gateway.acceso.reservar_clave_actual()
         url = f"http://{gateway.lan_host}:{gateway.port}/?k={clave}"
         return web.json_response({
             "ok": True,
             "key": clave,
             "url": url,
-            "seconds": gateway.qr_seconds_left(),
+            "seconds": gateway.acceso.qr_seconds_left(),
             "matrix": qr.encode(url, "M"),
         })
 
@@ -1605,14 +1521,14 @@ def build_app(gateway: Gateway) -> web.Application:
             while True:
                 await asyncio.sleep(1.0)
                 gateway.keep_pin_fresh()
-                if gateway.login_key != last_key:
-                    last_key = gateway.login_key
+                if gateway.acceso.login_key != last_key:
+                    last_key = gateway.acceso.login_key
                     data = {
                         "url": gateway.login_url(),
                         "key": last_key,
-                        "pin": gateway.pin,
-                        "seconds": gateway.qr_seconds_left(),
-                        "auth_required": gateway.auth_required,
+                        "pin": gateway.acceso.pin,
+                        "seconds": gateway.acceso.qr_seconds_left(),
+                        "auth_required": gateway.acceso.auth_required,
                         "matrix": qr.encode(gateway.login_url(), "M"),
                     }
                     await response.write(
@@ -1633,14 +1549,14 @@ def build_app(gateway: Gateway) -> web.Application:
         """
         if not is_local(request):
             raise web.HTTPForbidden(text="Solo en la PC")
-        gateway.refresh_login_key()
+        gateway.acceso.refresh_login_key()
         url = gateway.login_url()
         return web.json_response({
             "url": url,
-            "key": gateway.login_key,
-            "pin": gateway.pin,
-            "seconds": gateway.qr_seconds_left(),
-            "auth_required": gateway.auth_required,
+            "key": gateway.acceso.login_key,
+            "pin": gateway.acceso.pin,
+            "seconds": gateway.acceso.qr_seconds_left(),
+            "auth_required": gateway.acceso.auth_required,
             "matrix": qr.encode(url, "M"),
         })
 
@@ -1648,7 +1564,7 @@ def build_app(gateway: Gateway) -> web.Application:
         return web.json_response({
             "ok": True,
             "version": APP_VERSION,
-            "auth_required": gateway.auth_required,
+            "auth_required": gateway.acceso.auth_required,
         })
 
     async def api_stop(request: web.Request) -> web.StreamResponse:
@@ -1676,8 +1592,8 @@ def build_app(gateway: Gateway) -> web.Application:
         except Exception:
             payload = {}
         activo = bool((payload or {}).get("required", True))
-        gateway.set_auth_required(activo, "desde el navegador de la PC")
-        return web.json_response({"ok": True, "required": gateway.auth_required})
+        gateway.acceso.set_auth_required(activo, "desde el navegador de la PC")
+        return web.json_response({"ok": True, "required": gateway.acceso.auth_required})
 
     app.router.add_get("/", index)
     app.router.add_get("/ws", gateway.ws_handler)
@@ -1706,7 +1622,7 @@ async def run(args: argparse.Namespace) -> None:
         # la misma WiFi puede manejar la PC. Se guarda la eleccion para que
         # siga quitado en los proximos arranques (se cambia con "auth on" o
         # desde Ajustes en el celular).
-        gateway.auth_required = False
+        gateway.acceso.auth_required = False
         save_config({"auth_required": False})
         log.warning("Arrancando SIN codigo de acceso (--no-auth): la eleccion "
                     "queda guardada; para volver a pedirlo, escribe 'auth on'")
@@ -1714,10 +1630,16 @@ async def run(args: argparse.Namespace) -> None:
         # Se respeta lo que se eligio la ultima vez.
         guardado = load_config()
         if guardado.get("auth_required") is False:
-            gateway.auth_required = False
+            gateway.acceso.auth_required = False
             log.warning("El codigo de acceso esta desactivado (se quito antes "
                         "con quitar-codigo.bat o desde la app): el celular "
                         "entra directamente")
+
+    if args.confirmar and not gateway.confirmar_nuevos:
+        gateway.set_confirmar_nuevos(True, "(--confirmar)")
+    if gateway.confirmar_nuevos:
+        log.info("Cada dispositivo NUEVO necesitara tu permiso en esta PC "
+                 "(para quitarlo: escribe 'confirmar off')")
 
     app = build_app(gateway)
     runner = web.AppRunner(app, access_log=None)
@@ -1732,7 +1654,7 @@ async def run(args: argparse.Namespace) -> None:
         return
 
     log.info("RemotePad %s en marcha (puerto %d)", APP_VERSION, args.port)
-    if gateway.auth_required and not args.no_qr:
+    if gateway.acceso.auth_required and not args.no_qr:
         log.info("Comprueba en el celular que la app muestre la version %s "
                  "(Ajustes); si muestra otra, borra los datos del sitio.",
                  APP_VERSION)
@@ -1745,15 +1667,15 @@ async def run(args: argparse.Namespace) -> None:
     # La consola redibuja el QR cada vez que cambia, para que el que esta a la
     # vista nunca este caducado. Solo tiene sentido si se pide codigo.
     gateway.show_qr_console = (
-        not args.no_qr and gateway.auth_required and qr.supports_color()
+        not args.no_qr and gateway.acceso.auth_required and qr.supports_color()
     )
-    # Ojo: se pasa el estado REAL (gateway.auth_required), no solo el argumento
+    # Ojo: se pasa el estado REAL (gateway.acceso.auth_required), no solo el argumento
     # --no-auth, porque el codigo puede estar desactivado desde config.json.
     print_banner(
-        shown_host, args.port, gateway.pin, gateway.auth_required,
-        login_key=gateway.login_key, show_qr=not args.no_qr,
+        shown_host, args.port, gateway.acceso.pin, gateway.acceso.auth_required,
+        login_key=gateway.acceso.login_key, show_qr=not args.no_qr,
     )
-    if not gateway.auth_required:
+    if not gateway.acceso.auth_required:
         # El recuadro va despues del banner para que no corte el logo.
         print(AVISO_SIN_ACCESO)
 
@@ -1781,6 +1703,20 @@ async def run(args: argparse.Namespace) -> None:
         print("\n" + "=" * 58)
         print("   RemotePad se ha detenido. Puedes cerrar esta ventana.")
         print("=" * 58 + "\n")
+
+
+def imprimir_dispositivos(gateway: Gateway) -> None:
+    filas = gateway.lista_dispositivos()
+    if not filas:
+        print("   No hay ningun dispositivo con acceso.")
+        return
+    print(f"   {'codigo':<9}{'dispositivo':<30}{'direccion':<16}ultima vez")
+    for fila in filas:
+        visto = time.strftime("%d/%m %H:%M", time.localtime(fila["visto"]))
+        marca = "  (conectado)" if fila["conectado"] else ""
+        print(f"   {fila['id']:<9}{fila['nombre'][:29]:<30}{fila['addr'][:15]:<16}"
+              f"{visto}{marca}")
+    print("   Para quitar uno:  revocar <codigo>")
 
 
 async def console_commands(gateway: Gateway) -> None:
@@ -1828,25 +1764,50 @@ async def console_commands(gateway: Gateway) -> None:
                 gateway.request_stop("desde la consola")
                 return
             if comando in encender:
-                gateway.set_auth_required(True, "desde la consola")
+                gateway.acceso.set_auth_required(True, "desde la consola")
                 print("   Control de acceso ACTIVADO. El PIN actual es "
-                      f"{gateway.pin}")
+                      f"{gateway.acceso.pin}")
                 continue
             if comando in apagar:
-                gateway.set_auth_required(False, "desde la consola")
+                gateway.acceso.set_auth_required(False, "desde la consola")
                 print(AVISO_SIN_ACCESO)
+                continue
+            if comando in ("si", "sí", "permitir", "no", "rechazar"):
+                permitir = comando not in ("no", "rechazar")
+                if not gateway.responder_confirmacion(permitir):
+                    print("   No hay ningun dispositivo esperando permiso.")
+                continue
+            if comando in ("dispositivos", "devices", "d"):
+                imprimir_dispositivos(gateway)
+                continue
+            if comando.startswith("revocar ") or comando.startswith("revoke "):
+                prefijo = comando.split(None, 1)[1]
+                nombre = await gateway.revocar_dispositivo(prefijo, "desde la consola")
+                if nombre:
+                    print(f"   Acceso retirado: {nombre}")
+                else:
+                    print("   No hay un dispositivo (y solo uno) con ese codigo. "
+                          "Escribe 'dispositivos' para ver la lista.")
+                continue
+            if comando in ("confirmar on", "confirmar off"):
+                gateway.set_confirmar_nuevos(comando.endswith("on"), "desde la consola")
+                print("   Los dispositivos nuevos "
+                      + ("necesitaran tu permiso." if gateway.confirmar_nuevos
+                         else "entraran solo con el PIN o el QR."))
                 continue
             if comando in ("", "qr"):
                 if gateway.show_qr_console:
-                    gateway.refresh_login_key()
+                    gateway.acceso.refresh_login_key()
                     print_qr_block(gateway.console_host, gateway.port,
-                                   gateway.login_key, when="codigo nuevo")
+                                   gateway.acceso.login_key, when="codigo nuevo")
                 else:
                     print("   Este terminal no admite el QR en color; "
                           "usa el panel del navegador.")
                 continue
             print("   ENTER = nuevo codigo QR   ·   q = detener   ·   "
-                  "auth off / auth on = codigo de acceso")
+                  "auth off / auth on = codigo de acceso\n"
+                  "   dispositivos = lista   ·   revocar <codigo> = quitar acceso   ·   "
+                  "confirmar on / off = permiso para los nuevos")
     except asyncio.CancelledError:
         pass
     except Exception:
@@ -1868,6 +1829,10 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-browser", action="store_true", help="no abrir el navegador al iniciar"
+    )
+    parser.add_argument(
+        "--confirmar", action="store_true",
+        help="pedir confirmacion en la PC para cada dispositivo nuevo (se recuerda)"
     )
     return parser.parse_args(list(argv) if argv is not None else None)
 

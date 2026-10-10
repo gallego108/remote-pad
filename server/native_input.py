@@ -204,6 +204,20 @@ def _configure() -> None:
     _kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
 
 
+    # Pregunta de confirmacion (dispositivos nuevos).
+    _user32.MessageBoxTimeoutW.argtypes = (
+        wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR,
+        wintypes.UINT, wintypes.WORD, wintypes.DWORD,
+    )
+    _user32.MessageBoxTimeoutW.restype = ctypes.c_int
+    _user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
+    _user32.FindWindowW.restype = wintypes.HWND
+    _user32.PostMessageW.argtypes = (
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM
+    )
+    _user32.PostMessageW.restype = wintypes.BOOL
+
+
 _configure()
 
 
@@ -632,3 +646,54 @@ def press_media(name: str) -> bool:
     if vk is None:
         return False
     return tap_key(vk, extended=True)
+
+
+# ------------------------------------------------------------- confirmacion
+MB_YESNO = 0x04
+MB_ICONQUESTION = 0x20
+MB_DEFBUTTON2 = 0x100
+MB_SYSTEMMODAL = 0x1000
+MB_SETFOREGROUND = 0x10000
+MB_TOPMOST = 0x40000
+IDYES = 6
+IDNO = 7
+WM_COMMAND = 0x0111
+
+
+def ask_yes_no(title: str, text: str, seconds: float) -> Optional[bool]:
+    """
+    Pregunta Si/No en una ventana encima de todo. Bloquea hasta la respuesta.
+
+    Devuelve True (Si), False (No) o None si paso el tiempo o no se pudo
+    mostrar. "No" es el boton por defecto: un ENTER despistado no deja entrar
+    a nadie. MessageBoxTimeoutW no esta documentada, pero existe en user32
+    desde Windows XP y es la unica forma de que la ventana se cierre sola.
+    """
+    if not available():
+        return None
+    flags = (MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2 | MB_SYSTEMMODAL
+             | MB_SETFOREGROUND | MB_TOPMOST)
+    try:
+        resultado = _user32.MessageBoxTimeoutW(
+            None, text, title, flags, 0, int(max(1.0, seconds) * 1000)
+        )
+    except Exception:
+        return None
+    if resultado == IDYES:
+        return True
+    if resultado == IDNO:
+        return False
+    return None
+
+
+def dismiss_question(title: str) -> bool:
+    """Cierra (respondiendo No) la pregunta abierta con ese titulo."""
+    if not available():
+        return False
+    try:
+        hwnd = _user32.FindWindowW("#32770", title)
+        if not hwnd:
+            return False
+        return bool(_user32.PostMessageW(hwnd, WM_COMMAND, IDNO, 0))
+    except Exception:
+        return False
