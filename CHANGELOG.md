@@ -1,7 +1,15 @@
 # Historial de cambios
 
-## Sin publicar
+## 1.12.0
 
+- **Botones organizados por grupos.** Arriba quedan el estado de la
+  conexión, el **PIN** y **⟳ Reconectar**. Justo encima del panel, una fila
+  con las herramientas del touchpad (**Puntero**, **⚡ rápido**, **🔴 Láser**
+  y **↕ Franjas**): antes estaban en la barra de estado y en un celular
+  estrecho las últimas se salían de la pantalla. Debajo del panel, el grupo
+  **Ratón** (Clic izq., Clic der., Soltar, Ventana) y los paneles en dos
+  grupos con título: **Control** (Teclado, Atajos, Programas, Mando) y
+  **Extras** (Multimedia, Presentar, Ajustes, Ayuda).
 - **Adiós a la advertencia de seguridad al arrancar.** Nuevo
   `tools/crear_acceso_directo.py`: crea el acceso directo **RemotePad** (con
   su icono) en el Escritorio y en el menú Inicio. Abre `cmd.exe`, que está

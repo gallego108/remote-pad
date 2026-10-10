@@ -1935,13 +1935,13 @@ const TUTORIAL_STEPS = [
     body: 'Tocar = clic izquierdo · 2 dedos = clic derecho · 3 dedos = botón central.' },
   { icon: '✌️', title: 'Scroll y zoom',
     body: 'Desliza con 2 dedos para hacer scroll. Pellizca con 2 dedos para acercar o alejar (zoom). '
-      + 'Si se confunden, pulsa ↕ arriba: aparecen dos franjas para hacer scroll con un solo dedo. '
+      + 'Si se confunden, pulsa ↕ Franjas (arriba, sobre el panel): aparecen dos franjas para hacer scroll con un solo dedo. '
       + 'Si dejas el dedo apoyado, sigue solo: más lejos de donde empezaste, más rápido.' },
   { icon: '✊', title: 'Arrastrar',
     body: 'Mantén pulsado 0,4 s y desliza sin soltar para arrastrar. O toca dos veces y desliza '
       + '(arrastre fijo: toca otra vez para soltar).' },
   { icon: '⚡', title: 'Modo rápido',
-    body: 'El botón ⚡ de la barra superior multiplica por 3 la velocidad del puntero, '
+    body: 'El botón ⚡ de la fila de herramientas (sobre el panel) multiplica por 3 la velocidad del puntero, '
       + 'para cruzar la pantalla de una pasada.' },
   { icon: '⌨️', title: 'Teclado y dictado',
     body: 'En Teclado escribes y el texto aparece en la PC. Con 🎤 Dictar puedes hablar y que '

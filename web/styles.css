@@ -180,6 +180,34 @@ body { user-select: none; -webkit-user-select: none; }
   cursor: pointer;
 }
 .chip b { color: var(--accent-2); letter-spacing: .1rem; }
+.chip.icono { padding: 3px 10px; font-size: 1rem; line-height: 1.2; }
+
+/* Herramientas del touchpad: cuatro chips del mismo ancho, siempre visibles
+   (antes iban en la barra de estado y en un celular estrecho se salían). */
+.padtools {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+}
+.padtools .chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 6px 4px;
+}
+
+/* Título pequeño de cada grupo de botones (Ratón, Control, Extras). */
+.grupo-titulo {
+  grid-column: 1 / -1;
+  margin: 0 2px -2px;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .08rem;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .chip.armed { border-color: var(--accent); color: var(--accent); }
 
 /* -------------------------------------------------------- touchpad */
@@ -301,8 +329,8 @@ body { user-select: none; -webkit-user-select: none; }
   background: var(--bg-soft);
   border-top: 1px solid var(--line);
 }
-.quickbar { grid-template-columns: repeat(5, 1fr); }
-/* 8 paneles: dos filas de 4. */
+.quickbar { grid-template-columns: repeat(4, 1fr); }
+/* 8 paneles en dos grupos de 4: Control y Extras. */
 .toolbar {
   grid-template-columns: repeat(4, 1fr);
   padding-bottom: calc(8px + var(--safe-b));

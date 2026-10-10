@@ -167,8 +167,11 @@ Además:
   el campo el texto copiado en la PC, y **⬆ Copiar en el PC** deja el texto del
   campo en el portapapeles de la PC (para pegarlo con Ctrl+V).
 
-Los botones **Clic izq. / Clic der. / Ventana / Soltar / Reconectar** están
-siempre a la vista. **Ventana** abre un menú para minimizar, maximizar (o
+Los botones están agrupados: arriba el estado, el **PIN** y **⟳ Reconectar**;
+sobre el panel, las herramientas (**Puntero**, **⚡ rápido**, **🔴 Láser**,
+**↕ Franjas**); debajo, el grupo **Ratón** (**Clic izq. / Clic der. / Soltar /
+Ventana**) y los paneles en dos grupos: **Control** (Teclado, Atajos,
+Programas, Mando) y **Extras** (Multimedia, Presentar, Ajustes, Ayuda). **Ventana** abre un menú para minimizar, maximizar (o
 restaurar) o cerrar la ventana activa de la PC, y **Programas abiertos…**,
 que lista los programas de la barra de tareas para poner delante el que
 toques (también desde el botón **🗂️ Programas** de la barra inferior). El botón de la barra superior (**Puntero**) hace de interruptor maestro
