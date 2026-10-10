@@ -1,5 +1,13 @@
 # Historial de cambios
 
+## 1.8.3
+
+- **Precisión fina del puntero.** Al mover el dedo muy despacio el puntero
+  ahora avanza menos que el dedo (hasta un 30 %), así se puede llegar a
+  botones, bordes o letras pequeñas píxel a píxel. A velocidad normal no
+  cambia nada y al mover rápido sigue la aceleración de siempre. Se puede
+  desactivar con el ajuste «Precisión fina».
+
 ## 1.8.2
 
 - **Scroll suave, sin saltos.** Antes la PC recibía el scroll en «clics»

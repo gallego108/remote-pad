@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.8.2">
+<link rel="stylesheet" href="styles.css?v=1.8.3">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.8.2';
+const REMOTEPAD_WEB = '1.8.3';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -351,6 +351,10 @@ const REMOTEPAD_WEB = '1.8.2';
       <input id="s-accel" type="checkbox" checked>
     </label>
     <label class="setting switch">
+      <span>Precisión fina (mover despacio = el puntero avanza poquito)</span>
+      <input id="s-precision" type="checkbox" checked>
+    </label>
+    <label class="setting switch">
       <span>Desplazamiento natural (como en el celular)</span>
       <input id="s-natural" type="checkbox" checked>
     </label>
@@ -587,7 +591,7 @@ const REMOTEPAD_WEB = '1.8.2';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.8.2"></script>
+<script src="app.js?v=1.8.3"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero

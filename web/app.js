@@ -72,6 +72,7 @@ const DEFAULTS = {
   sensitivity: 1.6,
   scrollSpeed: 1.0,
   accel: true,
+  precision: true,          // movimiento lento del dedo = puntero aun mas lento
   naturalScroll: true,
   smoothScroll: true,       // rueda en fracciones de clic: sin saltos
   tapClick: true,
@@ -680,6 +681,7 @@ const gesture = {
   lastTapTime: 0,
   lastTapPos: { x: 0, y: 0 },
   acc: { x: 0, y: 0 },
+  velSuave: 0,              // velocidad del dedo suavizada (px por tic de 16 ms)
   streamTimer: null,
   twoFinger: { start: 0, moved: 0, active: false, mode: '', lastDist: 0 },
   firstDownAt: 0,           // cuando bajo el primer dedo (para el toque de 2)
@@ -1243,6 +1245,7 @@ function aplicarFranjas() {
 /* --------------------------------------------- envío a ritmo constante */
 function startStreaming() {
   if (gesture.streamTimer) return;
+  gesture.velSuave = 0;
   gesture.streamTimer = setInterval(pump, 16);
 }
 
@@ -1264,14 +1267,29 @@ function pump() {
     return;
   }
 
-  let dx = x, dy = y;
-  if (settings.accel) {
-    const speed = Math.hypot(x, y);
-    const boost = 1 + Math.min(1.1, speed / 34);
-    dx *= boost;
-    dy *= boost;
+  const speed = Math.hypot(x, y);
+  // Media movil: un solo tic lento (o rapido) no cambia la ganancia de golpe.
+  gesture.velSuave = gesture.velSuave ? gesture.velSuave * 0.6 + speed * 0.4 : speed;
+  const factor = gananciaPuntero(gesture.velSuave);
+  sendMove(x * factor, y * factor);
+}
+
+/* Curva de ganancia del puntero segun la velocidad del dedo (px por tic).
+   - Precision fina: por debajo de PRECISION_VEL la ganancia baja hasta
+     PRECISION_MIN, para poder colocar el puntero pixel a pixel. El servidor
+     acumula las fracciones, asi que ningun movimiento se pierde.
+   - Aceleracion: al mover rapido la ganancia sube hasta 2,1x. */
+const PRECISION_VEL = 4;
+const PRECISION_MIN = 0.3;
+
+function gananciaPuntero(vel) {
+  let factor = 1;
+  if (settings.precision && vel < PRECISION_VEL && !state.fast) {
+    const t = vel / PRECISION_VEL;
+    factor = PRECISION_MIN + (1 - PRECISION_MIN) * t * t;
   }
-  sendMove(dx, dy);
+  if (settings.accel) factor *= 1 + Math.min(1.1, vel / 34);
+  return factor;
 }
 /* ------------------------------------------------------------------- UI */
 function openSheet(name) {
@@ -1970,6 +1988,7 @@ function refreshSettingsUI() {
   $('s-scroll').value = settings.scrollSpeed;
   $('v-scroll').textContent = settings.scrollSpeed.toFixed(1) + '×';
   $('s-accel').checked = settings.accel;
+  $('s-precision').checked = settings.precision;
   $('s-natural').checked = settings.naturalScroll;
   $('s-smooth').checked = settings.smoothScroll;
   $('s-tap').checked = settings.tapClick;
@@ -2296,6 +2315,7 @@ function bindUI() {
     });
   };
   bindSwitch('s-accel', 'accel');
+  bindSwitch('s-precision', 'precision');
   bindSwitch('s-natural', 'naturalScroll');
   bindSwitch('s-smooth', 'smoothScroll');
   bindSwitch('s-tap', 'tapClick');
