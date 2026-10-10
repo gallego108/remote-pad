@@ -176,6 +176,7 @@ body { user-select: none; -webkit-user-select: none; }
   background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 999px;
+  white-space: nowrap;
   cursor: pointer;
 }
 .chip b { color: var(--accent-2); letter-spacing: .1rem; }
@@ -217,6 +218,47 @@ body { user-select: none; -webkit-user-select: none; }
 }
 .pad-hint b { color: #94a3b8; }
 .pad-hint.hidden { opacity: 0; }
+
+/* Franjas de scroll: con un dedo, sin que el gesto pueda confundirse con la
+   pinza. La vertical va pegada a la derecha y la horizontal abajo; dejan
+   libre la esquina para no solaparse. */
+.scroll-strip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  color: #64748b;
+  font-size: 1.1rem;
+  background: #4f8cff14;
+  border: 1px solid #4f8cff40;
+  transition: background .12s, border-color .12s;
+}
+.scroll-strip[hidden] { display: none; }
+.scroll-strip span { pointer-events: none; }
+.scroll-strip.vertical {
+  top: 14px;
+  right: 14px;
+  bottom: 72px;
+  width: 46px;
+  border-radius: 14px;
+  background-image: repeating-linear-gradient(
+    0deg, transparent 0 22px, #4f8cff26 22px 23px);
+}
+.scroll-strip.horizontal {
+  left: 14px;
+  right: 72px;
+  bottom: 14px;
+  height: 46px;
+  border-radius: 14px;
+  background-image: repeating-linear-gradient(
+    90deg, transparent 0 22px, #4f8cff26 22px 23px);
+}
+.scroll-strip.active {
+  color: var(--accent);
+  background-color: #4f8cff2e;
+  border-color: var(--accent);
+}
 
 .cursor {
   position: absolute;

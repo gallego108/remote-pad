@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.8.0">
+<link rel="stylesheet" href="styles.css?v=1.8.1">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.8.0';
+const REMOTEPAD_WEB = '1.8.1';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -103,6 +103,7 @@ const REMOTEPAD_WEB = '1.8.0';
     <button id="mode-btn" class="chip" title="Modo del touchpad">Puntero</button>
     <button id="fast-btn" class="chip" title="Modo rápido: el puntero va 3×">⚡ 1×</button>
     <button id="laser-btn" class="chip" title="Puntero láser para señalar">🔴</button>
+    <button id="strips-btn" class="chip" title="Mostrar u ocultar las franjas de scroll">↕</button>
   </header>
 
   <section id="pad" class="pad" aria-label="Superficie táctil">
@@ -111,10 +112,15 @@ const REMOTEPAD_WEB = '1.8.0';
       <b>Toca</b> = clic izq. · <b>2 dedos</b> = scroll · <b>pinza</b> = zoom<br>
       <b>2 dedos tocando</b> = clic der. · <b>3 dedos</b> = botón central<br>
       <b>3 dedos ↑↓</b> = volumen · <b>3 dedos ←→</b> = pestañas<br>
-      <b>Borde ←/→</b> = Atrás/Adelante · <b>mantén pulsado</b> = arrastrar
+      <b>Borde ←/→</b> = Atrás/Adelante · <b>mantén pulsado</b> = arrastrar<br>
+      <b>↕</b> arriba = franjas para hacer scroll con 1 dedo
     </div>
     <div id="cursor" class="cursor"></div>
     <div id="drag-ring" class="drag-ring" hidden></div>
+    <div id="scroll-v" class="scroll-strip vertical" hidden
+         aria-label="Franja de scroll vertical"><span>⇕</span></div>
+    <div id="scroll-h" class="scroll-strip horizontal" hidden
+         aria-label="Franja de scroll horizontal"><span>⇔</span></div>
   </section>
 
   <nav class="quickbar">
@@ -577,7 +583,7 @@ const REMOTEPAD_WEB = '1.8.0';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.8.0"></script>
+<script src="app.js?v=1.8.1"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero

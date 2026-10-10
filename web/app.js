@@ -36,6 +36,9 @@ const el = {
   modeBtn: $('mode-btn'),
   fastBtn: $('fast-btn'),
   laserBtn: $('laser-btn'),
+  stripsBtn: $('strips-btn'),
+  scrollV: $('scroll-v'),
+  scrollH: $('scroll-h'),
   pad: $('pad'),
   padHint: $('pad-hint'),
   cursor: $('cursor'),
@@ -78,6 +81,7 @@ const DEFAULTS = {
   threeFinger: true,
   edgeBack: true,
   pinchZoom: true,
+  scrollStrips: false,      // franjas para hacer scroll con un dedo
   learnAdaptive: true,      // el servidor aprende tu sensibilidad
   learnTap: true,           // filtro que aprende a exigir mas en el toque de 2
   learnThreshold: true,     // umbral pinza/scroll aprendido de tus gestos
@@ -1127,6 +1131,110 @@ function stopInertia() {
   }
 }
 
+/* ------------------------------------------------- franjas de scroll */
+/* Con dos dedos el scroll y la pinza se distinguen por como se mueven los
+   dedos, y a veces se confunden. En las franjas basta UN dedo y solo cuenta
+   su eje: la vertical hace scroll arriba/abajo y la horizontal a los lados.
+   Sus eventos no llegan al panel, asi que no mueven el puntero ni hacen clic.
+
+   Scroll continuo: si el dedo se queda apoyado despues de haberse alejado del
+   punto donde se puso, el scroll sigue solo hacia ese lado, como un joystick.
+   Cuanto mas lejos esta el dedo de su punto de partida, mas rapido va. */
+const STRIP_DEAD = 24;          // px que hay que alejarse para que siga solo
+const STRIP_LINEAL = 3;         // px de scroll por segundo, por px de distancia
+const STRIP_CUADRATICO = 0.012; // y la parte que crece con el cuadrado
+const strip = {
+  id: null, eje: '', inicio: 0, last: 0, acc: 0, offset: 0,
+  tick: 0, timer: null, elemento: null,
+};
+
+function pintarRayas(delta) {
+  // Las rayas de la franja se desplazan con el scroll, como una rueda.
+  strip.offset += delta;
+  strip.elemento.style.backgroundPosition = strip.eje === 'y'
+    ? `0 ${strip.offset}px` : `${strip.offset}px 0`;
+}
+
+function vaciarFranja() {
+  const ahora = performance.now();
+  const dt = Math.min(0.1, (ahora - strip.tick) / 1000);
+  strip.tick = ahora;
+
+  // Parte continua: depende de lo lejos que siga el dedo de donde empezo.
+  const distancia = strip.last - strip.inicio;
+  const exceso = Math.abs(distancia) - STRIP_DEAD;
+  if (exceso > 0) {
+    const rapidez = exceso * STRIP_LINEAL + exceso * exceso * STRIP_CUADRATICO;
+    const extra = Math.sign(distancia) * rapidez * dt;
+    strip.acc += extra;
+    pintarRayas(extra);
+  }
+
+  const valor = strip.acc;
+  if (!valor) return;
+  strip.acc = 0;
+  if (strip.eje === 'y') sendScroll(0, valor);
+  else sendScroll(valor, 0);
+}
+
+function terminarFranja() {
+  if (strip.id === null) return;
+  vaciarFranja();
+  clearInterval(strip.timer);
+  strip.timer = null;
+  strip.elemento.classList.remove('active');
+  strip.id = null;
+  strip.elemento = null;
+}
+
+function bindScrollStrip(elemento, eje) {
+  const posicion = (event) => (eje === 'y' ? event.clientY : event.clientX);
+
+  elemento.addEventListener('pointerdown', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (strip.id !== null) return;          // un solo dedo manda en las franjas
+    stopInertia();
+    try { elemento.setPointerCapture(event.pointerId); } catch (_) {}
+    strip.id = event.pointerId;
+    strip.eje = eje;
+    strip.elemento = elemento;
+    strip.last = posicion(event);
+    strip.inicio = strip.last;
+    strip.acc = 0;
+    strip.tick = performance.now();
+    strip.timer = setInterval(vaciarFranja, 16);
+    elemento.classList.add('active');
+    hideHint();
+    buzz(8);
+  });
+
+  elemento.addEventListener('pointermove', (event) => {
+    event.stopPropagation();
+    if (event.pointerId !== strip.id) return;
+    const ahora = posicion(event);
+    const delta = ahora - strip.last;
+    strip.last = ahora;
+    strip.acc += delta;
+    pintarRayas(delta);
+  });
+
+  const soltar = (event) => {
+    event.stopPropagation();
+    if (event.pointerId === strip.id) terminarFranja();
+  };
+  elemento.addEventListener('pointerup', soltar);
+  elemento.addEventListener('pointercancel', soltar);
+}
+
+function aplicarFranjas() {
+  const visibles = !!settings.scrollStrips;
+  if (!visibles) terminarFranja();
+  el.scrollV.hidden = !visibles;
+  el.scrollH.hidden = !visibles;
+  el.stripsBtn.classList.toggle('armed', visibles);
+}
+
 /* --------------------------------------------- envío a ritmo constante */
 function startStreaming() {
   if (gesture.streamTimer) return;
@@ -1689,7 +1797,9 @@ const TUTORIAL_STEPS = [
   { icon: '👊', title: 'Hacer clic',
     body: 'Tocar = clic izquierdo · 2 dedos = clic derecho · 3 dedos = botón central.' },
   { icon: '✌️', title: 'Scroll y zoom',
-    body: 'Desliza con 2 dedos para hacer scroll. Pellizca con 2 dedos para acercar o alejar (zoom).' },
+    body: 'Desliza con 2 dedos para hacer scroll. Pellizca con 2 dedos para acercar o alejar (zoom). '
+      + 'Si se confunden, pulsa ↕ arriba: aparecen dos franjas para hacer scroll con un solo dedo. '
+      + 'Si dejas el dedo apoyado, sigue solo: más lejos de donde empezaste, más rápido.' },
   { icon: '✊', title: 'Arrastrar',
     body: 'Mantén pulsado 0,4 s y desliza sin soltar para arrastrar. O toca dos veces y desliza '
       + '(arrastre fijo: toca otra vez para soltar).' },
@@ -1864,6 +1974,7 @@ function refreshSettingsUI() {
   $('s-three').checked = settings.threeFinger;
   $('s-edgeback').checked = settings.edgeBack;
   $('s-pinch').checked = settings.pinchZoom;
+  aplicarFranjas();
   $('s-learn').checked = settings.learnAdaptive;
   $('s-learntap').checked = settings.learnTap;
   $('s-learnumbral').checked = settings.learnThreshold;
@@ -2000,6 +2111,20 @@ function bindUI() {
       : 'Velocidad normal');
     buzz(14);
   });
+
+  el.stripsBtn.addEventListener('click', () => {
+    settings.scrollStrips = !settings.scrollStrips;
+    saveSettings();
+    guardarPerfil();
+    aplicarFranjas();
+    toast(settings.scrollStrips
+      ? 'Franjas de scroll: desliza 1 dedo por ellas'
+      : 'Franjas de scroll ocultas');
+    buzz(14);
+  });
+  bindScrollStrip(el.scrollV, 'y');
+  bindScrollStrip(el.scrollH, 'x');
+  aplicarFranjas();
 
   el.laserBtn.addEventListener('click', () => {
     state.laser = !state.laser;

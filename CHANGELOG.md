@@ -1,5 +1,17 @@
 # Historial de cambios
 
+## 1.8.1
+
+- **Franjas de scroll.** El botón ↕ de la barra superior muestra dos franjas
+  en el panel: la vertical (a la derecha) hace scroll arriba y abajo, y la
+  horizontal (abajo) hacia los lados, deslizando **un solo dedo**. Así el
+  scroll ya no se confunde con la pinza de zoom. Si dejas el dedo apoyado
+  después de deslizarlo, el scroll **sigue solo**, como un joystick: cuanto
+  más lejos esté el dedo del punto donde lo pusiste, más rápido va, sin tener
+  que llegar al final de la franja. Mientras se ven, tapan la
+  zona del borde derecho (Adelante). Se vuelven a ocultar con el mismo botón
+  y la elección se recuerda.
+
 ## 1.8.0
 
 Seguridad reforzada, gestión de dispositivos, HTTPS, varios monitores, atajos
