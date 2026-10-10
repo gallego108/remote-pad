@@ -551,18 +551,32 @@ def click(button: str = "left", count: int = 1) -> bool:
 
 
 def scroll(vertical: int, horizontal: int = 0) -> bool:
-    """Rueda del raton. Unidades: 120 = un 'click' de rueda."""
+    """Rueda del raton en 'clicks' enteros (cada uno = WHEEL_DELTA)."""
+    v = max(-50, min(50, int(round(vertical))))
+    h = max(-50, min(50, int(round(horizontal))))
+    return scroll_delta(v * WHEEL_DELTA, h * WHEEL_DELTA)
+
+
+MAX_WHEEL_DELTA = 50 * WHEEL_DELTA
+
+
+def scroll_delta(vertical: int, horizontal: int = 0) -> bool:
+    """
+    Rueda en alta resolucion: unidades de rueda (120 = un 'click').
+
+    Windows admite valores menores que WHEEL_DELTA (las ruedas y touchpads de
+    precision los usan): las aplicaciones modernas desplazan solo esa
+    fraccion, y el scroll se ve continuo en vez de a saltos de 3 lineas.
+    """
     if not available():
         return False
     items: list[INPUT] = []
-    if vertical:
-        steps = max(-50, min(50, int(round(vertical))))
-        if steps:
-            items.append(_mouse_input(0, 0, MOUSEEVENTF_WHEEL, steps * WHEEL_DELTA))
-    if horizontal:
-        steps = max(-50, min(50, int(round(horizontal))))
-        if steps:
-            items.append(_mouse_input(0, 0, MOUSEEVENTF_HWHEEL, steps * WHEEL_DELTA))
+    v = max(-MAX_WHEEL_DELTA, min(MAX_WHEEL_DELTA, int(vertical)))
+    h = max(-MAX_WHEEL_DELTA, min(MAX_WHEEL_DELTA, int(horizontal)))
+    if v:
+        items.append(_mouse_input(0, 0, MOUSEEVENTF_WHEEL, v))
+    if h:
+        items.append(_mouse_input(0, 0, MOUSEEVENTF_HWHEEL, h))
     return _send(items) if items else True
 
 

@@ -78,10 +78,10 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.2"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
-SCROLL_QUEUE_DELAY_MS = 40
+SCROLL_QUEUE_DELAY_MS = 16
 # Anti-apagado: cada cuanto se mueve el raton 1 px para simular actividad.
 KEEP_AWAKE_INTERVAL = 40.0
 # Confirmacion de dispositivos nuevos: titulo de la ventana y tiempo maximo.
@@ -546,6 +546,7 @@ class Gateway:
         self._move_accum = [0.0, 0.0]
         self._scroll_accum = [0.0, 0.0]
         self._scroll_sent_at = 0.0
+        self._scroll_suave = False   # rueda de alta resolucion (lo pide el cliente)
         self._idle_cleanup_done = False
 
     # -------------------------------------------------------------- PIN/token
@@ -895,7 +896,8 @@ class Gateway:
                 if sdx or sdy:
                     try:
                         await loop.run_in_executor(
-                            self.executor, self.controller.mouse_scroll, sdx, sdy
+                            self.executor, self.controller.mouse_scroll,
+                            sdx, sdy, self._scroll_suave,
                         )
                     except Exception:
                         log.debug("scroll fallo", exc_info=True)
@@ -985,6 +987,7 @@ class Gateway:
             return None
 
         if action == "mouse_scroll":
+            self._scroll_suave = bool(data.get("smooth"))
             self._scroll_q.append(
                 (
                     clamp_number(data.get("dx"), -2000, 2000),

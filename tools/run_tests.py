@@ -52,6 +52,7 @@ PRUEBAS = [
     Prueba("test_auth.py"),
     Prueba("test_aprendizaje.py"),
     Prueba("test_stop.py"),
+    Prueba("test_scroll.py"),
     Prueba("test_client.py", ["--port", "{puerto}", "--pin", "{pin}", "--cursor"],
            servidor=True, escritorio=True),
     Prueba("test_drag.py", ["--port", "{puerto}", "--pin", "{pin}"],

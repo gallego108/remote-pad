@@ -255,18 +255,33 @@ class DesktopController:
             self._held_keys.discard(vk)
             return native_input.release_key(vk)
 
-    def mouse_scroll(self, dx: float, dy: float) -> None:
+    def mouse_scroll(self, dx: float, dy: float, suave: bool = False) -> None:
         """
         Rueda del raton.
 
         El cliente envia 'unidades' (1 unidad = 1 pixel de deslizamiento).
         Se convierten a clicks de rueda y se conserva el resto para que un
         deslizamiento lento tambien acabe produciendo movimiento.
+
+        Con 'suave' se mandan fracciones de click (rueda de alta resolucion):
+        el desplazamiento es continuo en lugar de saltar de 3 en 3 lineas.
         """
         self._check_pin()
         with self._lock:
             self._scroll_remainder[0] += dx
             self._scroll_remainder[1] += dy
+
+            if suave:
+                por_unidad = native_input.WHEEL_DELTA / UNITS_PER_SCROLL_CLICK
+                # round(.., 6) antes de truncar: 22 * (120 / 22) da 119,999...
+                horizontal = int(round(self._scroll_remainder[0] * por_unidad, 6))
+                vertical = int(round(self._scroll_remainder[1] * por_unidad, 6))
+                self._scroll_remainder[0] -= horizontal / por_unidad
+                self._scroll_remainder[1] -= vertical / por_unidad
+                if horizontal or vertical:
+                    # Mismo cambio de signo que en el caso de clicks enteros.
+                    native_input.scroll_delta(-vertical, -horizontal)
+                return
 
             horizontal = int(self._scroll_remainder[0] / UNITS_PER_SCROLL_CLICK)
             vertical = int(self._scroll_remainder[1] / UNITS_PER_SCROLL_CLICK)

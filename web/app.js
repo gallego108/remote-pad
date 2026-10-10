@@ -73,6 +73,7 @@ const DEFAULTS = {
   scrollSpeed: 1.0,
   accel: true,
   naturalScroll: true,
+  smoothScroll: true,       // rueda en fracciones de clic: sin saltos
   tapClick: true,
   dragLock: true,
   haptics: true,
@@ -237,7 +238,11 @@ function sendMove(dx, dy) {
 function sendScroll(dx, dy) {
   const natural = settings.naturalScroll ? -1 : 1;
   const factor = SCROLL_UNITS_PER_PIXEL * settings.scrollSpeed;
-  send('mouse_scroll', { dx: dx * factor * natural, dy: dy * factor * natural });
+  send('mouse_scroll', {
+    dx: dx * factor * natural,
+    dy: dy * factor * natural,
+    smooth: !!settings.smoothScroll,
+  });
 }
 
 function wsUrl() {
@@ -1966,6 +1971,7 @@ function refreshSettingsUI() {
   $('v-scroll').textContent = settings.scrollSpeed.toFixed(1) + '×';
   $('s-accel').checked = settings.accel;
   $('s-natural').checked = settings.naturalScroll;
+  $('s-smooth').checked = settings.smoothScroll;
   $('s-tap').checked = settings.tapClick;
   $('s-draglock').checked = settings.dragLock;
   $('s-haptics').checked = settings.haptics;
@@ -2291,6 +2297,7 @@ function bindUI() {
   };
   bindSwitch('s-accel', 'accel');
   bindSwitch('s-natural', 'naturalScroll');
+  bindSwitch('s-smooth', 'smoothScroll');
   bindSwitch('s-tap', 'tapClick');
   bindSwitch('s-draglock', 'dragLock');
   bindSwitch('s-haptics', 'haptics');

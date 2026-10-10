@@ -1,5 +1,16 @@
 # Historial de cambios
 
+## 1.8.2
+
+- **Scroll suave, sin saltos.** Antes la PC recibía el scroll en «clics»
+  enteros de rueda (3 líneas de golpe) y agrupados cada 40 ms, y se notaba a
+  tirones. Ahora usa la rueda de alta resolución de Windows: manda fracciones
+  de clic cada ~16 ms y el navegador, Office o el Explorador se desplazan de
+  forma continua. Si alguna aplicación antigua no se mueve, se puede volver a
+  los clics enteros con el ajuste «Scroll suave».
+- **Scroll más lento.** La velocidad del scroll ahora baja hasta 0,1× (antes
+  el mínimo era 0,3×). También afecta a las franjas y a su scroll continuo.
+
 ## 1.8.1
 
 - **Franjas de scroll.** El botón ↕ de la barra superior muestra dos franjas
