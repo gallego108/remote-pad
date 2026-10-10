@@ -304,6 +304,12 @@ class DesktopController:
         with self._lock:
             return native_input.zoom(steps)
 
+    def window(self, op: str) -> dict:
+        """Minimiza, maximiza/restaura o cierra la ventana activa de la PC."""
+        self._check_pin()
+        with self._lock:
+            return native_input.window_action(op)
+
     def clipboard_text(self) -> str:
         """Texto del portapapeles de la PC (para enviarlo al celular)."""
         self._check_pin()

@@ -77,6 +77,7 @@ token si ya tenía uno válido, sin crear otro acceso), y `auth_query` responde
 
 | Acción | Datos | Notas |
 |---|---|---|
+| `window` | `{ op }` | Ventana activa de la PC: `minimize`, `maximize` (si ya está maximizada, la restaura) o `close` (como su botón ✕: la aplicación puede preguntar si guardar). Responde `{ ok, title, done }` o `{ error }`. No toca el escritorio ni la barra de tareas y no cierra la consola de RemotePad |
 | `keep_awake` | `{ minutes }` | Anti-apagado: mueve el ratón 1 px cada 40 s (sin desplazarlo) durante `minutes`; `on: false` lo detiene |
 | `save_settings` | `{ settings }` | Guarda las preferencias del dispositivo en la PC (`server/profiles.json`). Se devuelven en el mensaje `ok` del siguiente acceso |
 | `learning` | `{ on?, reset? }` | Aprendizaje del tacto: sin datos consulta el estado; `on` lo enciende/apaga; `reset` lo reinicia. Devuelve la ganancia aprendida y el estado |

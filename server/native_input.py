@@ -241,6 +241,20 @@ def _configure() -> None:
     )
     _user32.PostMessageW.restype = wintypes.BOOL
 
+    # Minimizar, maximizar y cerrar la ventana activa.
+    _user32.IsZoomed.argtypes = (wintypes.HWND,)
+    _user32.IsZoomed.restype = wintypes.BOOL
+    _user32.ShowWindowAsync.argtypes = (wintypes.HWND, ctypes.c_int)
+    _user32.ShowWindowAsync.restype = wintypes.BOOL
+    _user32.GetClassNameW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+    _user32.GetClassNameW.restype = ctypes.c_int
+    _user32.GetWindowTextW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
+    _user32.GetWindowTextW.restype = ctypes.c_int
+    _user32.GetAncestor.argtypes = (wintypes.HWND, wintypes.UINT)
+    _user32.GetAncestor.restype = wintypes.HWND
+    _kernel32.GetConsoleWindow.argtypes = ()
+    _kernel32.GetConsoleWindow.restype = wintypes.HWND
+
 
 _configure()
 
@@ -379,6 +393,70 @@ def foreground_app() -> str:
             _kernel32.CloseHandle(handle)
     except Exception:
         return ""
+
+
+# Ventanas que no se deben tocar: el escritorio y la barra de tareas (un
+# "cerrar" sobre el escritorio abriria el dialogo de apagar Windows).
+_VENTANAS_SISTEMA = {
+    "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+}
+_WM_SYSCOMMAND = 0x0112
+_SC_MINIMIZE = 0xF020
+_SC_MAXIMIZE = 0xF030
+_SC_RESTORE = 0xF120
+_SC_CLOSE = 0xF060
+_SW_MINIMIZE = 6
+_SW_MAXIMIZE = 3
+_SW_RESTORE = 9
+_GA_ROOT = 2
+
+
+def window_action(op: str) -> dict:
+    """
+    Minimiza, maximiza (o restaura si ya lo esta) o cierra la ventana activa.
+
+    `op` es "minimize", "maximize" o "close". Devuelve {"ok", "title", "done"}
+    o {"error"}. Se usa WM_SYSCOMMAND, igual que los botones de la barra de
+    titulo: la aplicacion puede preguntar si guardar antes de cerrar.
+    """
+    if op not in ("minimize", "maximize", "close"):
+        return {"error": "operacion desconocida"}
+    if not available():
+        return {"error": "no disponible"}
+    hwnd = _user32.GetForegroundWindow()
+    if hwnd:
+        hwnd = _user32.GetAncestor(hwnd, _GA_ROOT) or hwnd
+    if not hwnd:
+        return {"error": "no hay ninguna ventana activa"}
+
+    clase = ctypes.create_unicode_buffer(256)
+    _user32.GetClassNameW(hwnd, clase, len(clase))
+    if clase.value in _VENTANAS_SISTEMA:
+        return {"error": "no hay ninguna ventana activa"}
+    # La consola de RemotePad: cerrarla apagaria el servidor.
+    if op == "close" and hwnd == _kernel32.GetConsoleWindow():
+        return {"error": "es la consola de RemotePad"}
+
+    titulo = ctypes.create_unicode_buffer(256)
+    _user32.GetWindowTextW(hwnd, titulo, len(titulo))
+
+    if op == "minimize":
+        comando, mostrar, hecho = _SC_MINIMIZE, _SW_MINIMIZE, "minimized"
+    elif op == "maximize" and _user32.IsZoomed(hwnd):
+        comando, mostrar, hecho = _SC_RESTORE, _SW_RESTORE, "restored"
+    elif op == "maximize":
+        comando, mostrar, hecho = _SC_MAXIMIZE, _SW_MAXIMIZE, "maximized"
+    else:
+        comando, mostrar, hecho = _SC_CLOSE, None, "closed"
+
+    ok = bool(_user32.PostMessageW(hwnd, _WM_SYSCOMMAND, comando, 0))
+    # Si el mensaje no llega (p. ej. ventana de un programa elevado), ShowWindow
+    # sigue funcionando para minimizar y maximizar.
+    if not ok and mostrar is not None:
+        ok = bool(_user32.ShowWindowAsync(hwnd, mostrar))
+    if not ok:
+        return {"error": "Windows no dejo cambiar esa ventana"}
+    return {"ok": True, "title": titulo.value, "done": hecho}
 
 
 def left_button_is_down() -> bool:

@@ -37,6 +37,8 @@ const el = {
   fastBtn: $('fast-btn'),
   laserBtn: $('laser-btn'),
   stripsBtn: $('strips-btn'),
+  winBtn: $('win-btn'),
+  winMenu: $('win-menu'),
   scrollV: $('scroll-v'),
   scrollH: $('scroll-h'),
   pad: $('pad'),
@@ -464,6 +466,9 @@ function handleMessage(message) {
       } else if ((message.a === 'devices_list' || message.a === 'device_revoke'
                   || message.a === 'set_confirm') && message.d && !message.d.error) {
         pintarDispositivos(message.d);
+      } else if (message.a === 'window' && message.d && message.d.ok) {
+        const titulo = message.d.title ? ': ' + message.d.title : '';
+        toast((VENTANA_HECHO[message.d.done] || 'Hecho') + titulo, 1800);
       } else if (message.d && message.d.error) {
         toast('No se pudo: ' + message.d.error);
       }
@@ -1291,6 +1296,34 @@ function gananciaPuntero(vel) {
   if (settings.accel) factor *= 1 + Math.min(1.1, vel / 34);
   return factor;
 }
+/* ------------------------------------------------------- menú ventana */
+function abrirMenuVentana() {
+  const menu = el.winMenu;
+  menu.hidden = false;
+  // Se coloca justo encima del botón, sin salirse de la pantalla.
+  const boton = el.winBtn.getBoundingClientRect();
+  const ancho = menu.offsetWidth;
+  const izquierda = Math.min(
+    Math.max(8, boton.left + boton.width / 2 - ancho / 2),
+    window.innerWidth - ancho - 8,
+  );
+  menu.style.left = izquierda + 'px';
+  menu.style.bottom = (window.innerHeight - boton.top + 8) + 'px';
+  el.winBtn.setAttribute('aria-expanded', 'true');
+}
+
+function cerrarMenuVentana() {
+  el.winMenu.hidden = true;
+  el.winBtn.setAttribute('aria-expanded', 'false');
+}
+
+const VENTANA_HECHO = {
+  minimized: 'Minimizada',
+  maximized: 'Maximizada',
+  restored: 'Restaurada',
+  closed: 'Cerrando',
+};
+
 /* ------------------------------------------------------------------- UI */
 function openSheet(name) {
   closeSheets();
@@ -2224,6 +2257,10 @@ function bindUI() {
         send('mouse_release_all', {});
         toast('Botones liberados');
       }
+      if (action === 'window') {
+        if (el.winMenu.hidden) abrirMenuVentana(); else cerrarMenuVentana();
+        buzz(10);
+      }
       if (action === 'reset') {
         toast('Reconectando…');
         try { state.ws.close(); } catch (_) {}
@@ -2231,6 +2268,24 @@ function bindUI() {
       }
     });
   });
+
+  // --- menú «Ventana»: minimizar, maximizar o cerrar la ventana activa
+  document.querySelectorAll('[data-win]').forEach((button) => {
+    button.addEventListener('click', () => {
+      send('window', { op: button.dataset.win });
+      cerrarMenuVentana();
+      buzz(14);
+    });
+  });
+  // Tocar fuera del menú lo cierra (sin que ese toque haga nada más).
+  document.addEventListener('pointerdown', (event) => {
+    if (el.winMenu.hidden) return;
+    if (el.winMenu.contains(event.target) || el.winBtn.contains(event.target)) return;
+    cerrarMenuVentana();
+    event.preventDefault();
+    event.stopPropagation();
+  }, true);
+  window.addEventListener('resize', cerrarMenuVentana);
 
   // --- paneles
   document.querySelectorAll('[data-panel]').forEach((button) => {

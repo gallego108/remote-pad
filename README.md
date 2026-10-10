@@ -163,8 +163,9 @@ Además:
   el campo el texto copiado en la PC, y **⬆ Copiar en el PC** deja el texto del
   campo en el portapapeles de la PC (para pegarlo con Ctrl+V).
 
-Los botones **Clic izq. / Clic der. / Soltar / Reconectar** están siempre a la
-vista. El botón de la barra superior (**Puntero**) hace de interruptor maestro
+Los botones **Clic izq. / Clic der. / Ventana / Soltar / Reconectar** están
+siempre a la vista. **Ventana** abre un menú para minimizar, maximizar (o
+restaurar) o cerrar la ventana activa de la PC. El botón de la barra superior (**Puntero**) hace de interruptor maestro
 para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 
 ### Paneles inferiores
@@ -190,7 +191,7 @@ para el arrastre fijo: si algo se queda "pegado", pulsa **Soltar**.
 - **Multimedia** — ⏮ ⏯ ⏭, silencio y subir/bajar volumen.
 - **Presentar** — anterior/siguiente diapositiva, iniciar (F5), salir, y
   pantalla en negro o blanco (PowerPoint, Impress y similares).
-- **Ajustes** — velocidad del puntero y del scroll, aceleración, desplazamiento
+- **Ajustes** — velocidad del puntero y del scroll, aceleración, precisión fina (al mover despacio el puntero avanza menos), desplazamiento
   natural, inercia, gestos de 3 dedos, bordes, pinza, vibración y el desbloqueo.
   Incluye **💡 Mantener la pantalla encendida**: eliges cuánto tiempo (5 min a
   4 h) y la app mueve el ratón 1 píxel cada 40 s para que la PC no se apague

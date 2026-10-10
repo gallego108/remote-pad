@@ -78,7 +78,7 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.8.3"
+APP_VERSION = "1.9.0"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 16
@@ -1126,6 +1126,13 @@ class Gateway:
                 self.executor, c.media, str(data.get("action", ""))
             )
             return {"ok": bool(ok), "media": data.get("action")}
+
+        if action == "window":
+            # Botones de la barra de titulo de la ventana activa.
+            op = str(data.get("op", ""))
+            return await asyncio.get_running_loop().run_in_executor(
+                self.executor, c.window, op
+            )
 
         if action == "media_volume":
             # Volumen "inteligente": pynput no sabe el volumen actual, asi que

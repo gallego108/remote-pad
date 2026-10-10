@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 1.9.0
+
+- **Botón «Ventana».** Nuevo botón en la barra rápida que, al pulsarlo, muestra
+  tres opciones para la ventana activa de la PC: **Minimizar**, **Maximizar**
+  (o restaurar si ya está maximizada) y **Cerrar**. Funciona como los botones
+  de la barra de título: si hay algo sin guardar, la aplicación pregunta. No
+  actúa sobre el escritorio ni la barra de tareas, y no cierra la consola de
+  RemotePad. Al terminar avisa con el título de la ventana.
+
 ## 1.8.3
 
 - **Precisión fina del puntero.** Al mover el dedo muy despacio el puntero
