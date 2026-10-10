@@ -641,6 +641,8 @@ textarea#kb-text:focus { border-color: var(--accent); }
   font-weight: 700;
   color: #fff;
 }
+.ventanas .ventana-letra.con-icono { background: none; }
+.ventanas .ventana-letra img { width: 32px; height: 32px; }
 .ventanas .ventana-info { flex: 1 1 auto; min-width: 0; }
 .ventanas .ventana-titulo {
   display: block;

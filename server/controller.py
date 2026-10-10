@@ -17,6 +17,7 @@ import threading
 import time
 from typing import Iterable, Optional
 
+import iconos
 import native_input
 
 # Nombres de teclas aceptados (los que envia la aplicacion del celular).
@@ -56,6 +57,7 @@ class DesktopController:
         # Se llama antes de cada accion sensible para que el servidor pueda
         # mantener el PIN al dia aunque el celular este inactivo.
         self._pin_verifier = pin_verifier
+        self._iconos = iconos.CacheIconos()
 
         self._screen_w, self._screen_h = native_input.screen_size()
         self._monitors: list[dict] = native_input.monitors()
@@ -310,10 +312,30 @@ class DesktopController:
         with self._lock:
             return native_input.window_action(op)
 
-    def windows(self) -> list:
-        """Programas abiertos (los de la barra de tareas)."""
+    def windows(self) -> dict:
+        """
+        Programas abiertos (los de la barra de tareas) con sus iconos.
+
+        Cada ventana lleva la clave de su icono ("icon") y los iconos van
+        aparte ("icons"), una sola vez: varias ventanas del mismo programa
+        comparten icono. La ruta del ejecutable no sale de la PC.
+        """
         self._check_pin()
-        return native_input.list_windows()
+        ventanas = native_input.list_windows()
+        claves: dict[str, str] = {}
+        imagenes: dict[str, str] = {}
+        for ventana in ventanas:
+            ruta = ventana.pop("path", "") or ""
+            origen = ruta.lower() if ruta else f"ventana:{ventana['id']}"
+            url = self._iconos.obtener(
+                origen,
+                lambda v=ventana, r=ruta: native_input.window_icon(v["id"], r),
+            )
+            if url:
+                clave = claves.setdefault(origen, str(len(claves)))
+                imagenes[clave] = url
+                ventana["icon"] = clave
+        return {"windows": ventanas, "icons": imagenes}
 
     def window_focus(self, hwnd: int) -> dict:
         """Trae al frente uno de los programas abiertos."""

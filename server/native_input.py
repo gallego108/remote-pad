@@ -93,6 +93,7 @@ MEDIA_KEYS = {
 if IS_WINDOWS:
     _user32 = ctypes.windll.user32
     _kernel32 = ctypes.windll.kernel32
+    _gdi32 = ctypes.windll.gdi32
     try:
         _dwmapi = ctypes.windll.dwmapi
     except OSError:  # pragma: no cover
@@ -100,6 +101,7 @@ if IS_WINDOWS:
 else:  # pragma: no cover
     _user32 = None
     _kernel32 = None
+    _gdi32 = None
     _dwmapi = None
 
 
@@ -156,6 +158,22 @@ _MONITORENUMPROC = ctypes.WINFUNCTYPE(
 MONITORINFOF_PRIMARY = 0x1
 
 _WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+
+class _BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [
+        ("biSize", wintypes.DWORD),
+        ("biWidth", wintypes.LONG),
+        ("biHeight", wintypes.LONG),
+        ("biPlanes", wintypes.WORD),
+        ("biBitCount", wintypes.WORD),
+        ("biCompression", wintypes.DWORD),
+        ("biSizeImage", wintypes.DWORD),
+        ("biXPelsPerMeter", wintypes.LONG),
+        ("biYPelsPerMeter", wintypes.LONG),
+        ("biClrUsed", wintypes.DWORD),
+        ("biClrImportant", wintypes.DWORD),
+    ]
 
 
 def _configure() -> None:
@@ -285,6 +303,43 @@ def _configure() -> None:
     _user32.AttachThreadInput.restype = wintypes.BOOL
     _kernel32.GetCurrentThreadId.argtypes = ()
     _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+    # Iconos de los programas abiertos.
+    _user32.PrivateExtractIconsW.argtypes = (
+        wintypes.LPCWSTR, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.POINTER(wintypes.HICON), ctypes.POINTER(wintypes.UINT),
+        wintypes.UINT, wintypes.UINT,
+    )
+    _user32.PrivateExtractIconsW.restype = wintypes.UINT
+    _user32.SendMessageTimeoutW.argtypes = (
+        wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+        wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t),
+    )
+    _user32.SendMessageTimeoutW.restype = ctypes.c_size_t
+    _user32.GetClassLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int)
+    _user32.GetClassLongPtrW.restype = ctypes.c_size_t
+    _user32.DrawIconEx.argtypes = (
+        wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.HICON,
+        ctypes.c_int, ctypes.c_int, wintypes.UINT, wintypes.HBRUSH, wintypes.UINT,
+    )
+    _user32.DrawIconEx.restype = wintypes.BOOL
+    _user32.DestroyIcon.argtypes = (wintypes.HICON,)
+    _user32.DestroyIcon.restype = wintypes.BOOL
+    _gdi32.CreateCompatibleDC.argtypes = (wintypes.HDC,)
+    _gdi32.CreateCompatibleDC.restype = wintypes.HDC
+    _gdi32.CreateDIBSection.argtypes = (
+        wintypes.HDC, ctypes.POINTER(_BITMAPINFOHEADER), wintypes.UINT,
+        ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD,
+    )
+    _gdi32.CreateDIBSection.restype = wintypes.HBITMAP
+    _gdi32.SelectObject.argtypes = (wintypes.HDC, wintypes.HGDIOBJ)
+    _gdi32.SelectObject.restype = wintypes.HGDIOBJ
+    _gdi32.DeleteObject.argtypes = (wintypes.HGDIOBJ,)
+    _gdi32.DeleteObject.restype = wintypes.BOOL
+    _gdi32.DeleteDC.argtypes = (wintypes.HDC,)
+    _gdi32.DeleteDC.restype = wintypes.BOOL
+    _gdi32.GdiFlush.argtypes = ()
+    _gdi32.GdiFlush.restype = wintypes.BOOL
+
     if _dwmapi is not None:
         _dwmapi.DwmGetWindowAttribute.argtypes = (
             wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD
@@ -414,6 +469,12 @@ def foreground_app() -> str:
 
 def _exe_de_ventana(hwnd) -> str:
     """Nombre del ejecutable (sin ruta ni extension) dueno de una ventana."""
+    ruta = _ruta_exe(hwnd)
+    return os.path.splitext(os.path.basename(ruta))[0] if ruta else ""
+
+
+def _ruta_exe(hwnd) -> str:
+    """Ruta completa del ejecutable dueno de una ventana ("" si no se sabe)."""
     try:
         pid = wintypes.DWORD()
         _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -432,7 +493,7 @@ def _exe_de_ventana(hwnd) -> str:
                 handle, 0, buffer, ctypes.byref(tamano)
             ):
                 return ""
-            return os.path.splitext(os.path.basename(buffer.value))[0]
+            return buffer.value
         finally:
             _kernel32.CloseHandle(handle)
     except Exception:
@@ -576,16 +637,95 @@ def list_windows() -> list[dict]:
         return len(encontradas) < MAX_VENTANAS
 
     _user32.EnumWindows(_WNDENUMPROC(_una), 0)
-    return [
-        {
+    ventanas = []
+    for hwnd in encontradas:
+        ruta = _ruta_exe(hwnd)
+        ventanas.append({
             "id": hwnd,
             "title": _titulo(hwnd),
-            "app": _exe_de_ventana(hwnd),
+            "app": os.path.splitext(os.path.basename(ruta))[0] if ruta else "",
+            "path": ruta,
             "min": bool(_user32.IsIconic(hwnd)),
             "active": hwnd == activa,
-        }
-        for hwnd in encontradas
-    ]
+        })
+    return ventanas
+
+
+_WM_GETICON = 0x007F
+_ICON_SMALL2 = 2
+_ICON_BIG = 1
+_GCLP_HICON = -14
+_SMTO_ABORTIFHUNG = 0x0002
+_DI_NORMAL = 0x0003
+# Programas que alojan ventanas de otros: el icono de su .exe no es el bueno.
+_EXE_ANFITRIONES = {"applicationframehost"}
+
+
+def _icono_de_ventana(hwnd) -> int:
+    """El icono que la propia ventana muestra (no hay que destruirlo)."""
+    for tipo in (_ICON_BIG, _ICON_SMALL2):
+        resultado = ctypes.c_size_t(0)
+        if _user32.SendMessageTimeoutW(
+            hwnd, _WM_GETICON, tipo, 0, _SMTO_ABORTIFHUNG, 150,
+            ctypes.byref(resultado),
+        ) and resultado.value:
+            return resultado.value
+    return _user32.GetClassLongPtrW(hwnd, _GCLP_HICON) or 0
+
+
+def window_icon(hwnd: int, ruta: str = "", tamano: int = 64):
+    """
+    Dibuja el icono de un programa abierto.
+
+    Primero el del ejecutable a `tamano` px (nitido en la pantalla del
+    celular); si no hay, el que muestra la ventana. Devuelve
+    (ancho, alto, bgra_sobre_negro, bgra_sobre_blanco) o None; iconos.py lo
+    convierte a PNG con transparencia.
+    """
+    if not available() or _gdi32 is None:
+        return None
+    icono = 0
+    propio = False
+    nombre = os.path.splitext(os.path.basename(ruta))[0].lower() if ruta else ""
+    if ruta and nombre not in _EXE_ANFITRIONES:
+        hicon = wintypes.HICON()
+        ident = wintypes.UINT()
+        if _user32.PrivateExtractIconsW(
+            ruta, 0, tamano, tamano, ctypes.byref(hicon), ctypes.byref(ident), 1, 0
+        ) == 1 and hicon:
+            icono, propio = hicon.value, True
+    if not icono:
+        icono = _icono_de_ventana(hwnd)
+    if not icono:
+        return None
+
+    dc = _gdi32.CreateCompatibleDC(None)
+    cabecera = _BITMAPINFOHEADER(
+        ctypes.sizeof(_BITMAPINFOHEADER), tamano, -tamano, 1, 32, 0, 0, 0, 0, 0, 0
+    )
+    bits = ctypes.c_void_p()
+    mapa = _gdi32.CreateDIBSection(dc, ctypes.byref(cabecera), 0, ctypes.byref(bits), None, 0)
+    anterior = _gdi32.SelectObject(dc, mapa) if mapa else None
+    try:
+        if not mapa or not bits.value:
+            return None
+        n = tamano * tamano * 4
+        dibujos = []
+        for fondo in (0x00, 0xFF):
+            ctypes.memset(bits, fondo, n)
+            if not _user32.DrawIconEx(dc, 0, 0, icono, tamano, tamano, 0, None, _DI_NORMAL):
+                return None
+            _gdi32.GdiFlush()
+            dibujos.append(ctypes.string_at(bits, n))
+        return tamano, tamano, dibujos[0], dibujos[1]
+    finally:
+        if anterior:
+            _gdi32.SelectObject(dc, anterior)
+        if mapa:
+            _gdi32.DeleteObject(mapa)
+        _gdi32.DeleteDC(dc)
+        if propio:
+            _user32.DestroyIcon(icono)
 
 
 def focus_window(hwnd_id: int) -> dict:

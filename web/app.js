@@ -468,7 +468,7 @@ function handleMessage(message) {
                   || message.a === 'set_confirm') && message.d && !message.d.error) {
         pintarDispositivos(message.d);
       } else if (message.a === 'windows_list' && message.d && !message.d.error) {
-        pintarVentanas(message.d.windows);
+        pintarVentanas(message.d.windows, message.d.icons);
       } else if (message.a === 'window_focus' && message.d && message.d.ok) {
         toast('En pantalla: ' + (message.d.title || 'programa'), 1800);
       } else if (message.a === 'window' && message.d && message.d.ok) {
@@ -1341,7 +1341,7 @@ function colorDePrograma(nombre) {
   return `hsl(${h} 55% 42%)`;
 }
 
-function pintarVentanas(ventanas) {
+function pintarVentanas(ventanas, iconos) {
   const lista = $('windows-list');
   if (!lista || !Array.isArray(ventanas)) return;
   lista.replaceChildren();
@@ -1361,8 +1361,19 @@ function pintarVentanas(ventanas) {
     const app = String(ventana.app || '');
     const letra = document.createElement('span');
     letra.className = 'ventana-letra';
-    letra.textContent = (app || ventana.title || '?').charAt(0).toUpperCase();
-    letra.style.background = colorDePrograma(app || ventana.title || '');
+    const icono = iconos && ventana.icon != null ? iconos[ventana.icon] : '';
+    if (typeof icono === 'string' && icono.startsWith('data:image/png;base64,')) {
+      // El icono que tiene el programa en Windows.
+      const imagen = document.createElement('img');
+      imagen.src = icono;
+      imagen.alt = '';
+      letra.classList.add('con-icono');
+      letra.append(imagen);
+    } else {
+      // Sin icono: la inicial sobre un color propio del programa.
+      letra.textContent = (app || ventana.title || '?').charAt(0).toUpperCase();
+      letra.style.background = colorDePrograma(app || ventana.title || '');
+    }
 
     const info = document.createElement('span');
     info.className = 'ventana-info';

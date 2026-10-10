@@ -230,17 +230,17 @@ class EscritorioFalso(User32Falso):
 def con_escritorio(escritorio: EscritorioFalso, funcion, *args):
     originales = (native_input._user32, native_input._kernel32,
                   native_input._dwmapi, native_input.IS_WINDOWS,
-                  native_input._exe_de_ventana)
+                  native_input._ruta_exe)
     native_input._user32 = escritorio
     native_input._kernel32 = Kernel32Falso()
     native_input._dwmapi = None
     native_input.IS_WINDOWS = True
-    native_input._exe_de_ventana = lambda hwnd: f"app{hwnd}"
+    native_input._ruta_exe = lambda hwnd: f"C:/Apps/app{hwnd}.exe"
     try:
         return funcion(*args)
     finally:
         (native_input._user32, native_input._kernel32, native_input._dwmapi,
-         native_input.IS_WINDOWS, native_input._exe_de_ventana) = originales
+         native_input.IS_WINDOWS, native_input._ruta_exe) = originales
 
 
 def prueba_programas() -> None:
@@ -296,6 +296,14 @@ async def prueba_protocolo(puerto: int, pin: str) -> None:
         check("windows_list devuelve una lista", isinstance(ventanas, list), str(datos)[:200])
         check("Cada programa trae id, titulo y app",
               all({"id", "title", "app", "min", "active"} <= set(v) for v in ventanas or []))
+        check("La ruta del ejecutable no sale de la PC",
+              all("path" not in v for v in ventanas or []))
+        imagenes = datos.get("icons")
+        check("Los iconos llegan aparte y cada clave existe",
+              isinstance(imagenes, dict)
+              and all(v["icon"] in imagenes for v in ventanas or [] if "icon" in v))
+        check("Los iconos son PNG en data URL",
+              all(str(u).startswith("data:image/png;base64,") for u in (imagenes or {}).values()))
         await ws.send_str(json.dumps({"a": "window_focus", "d": {"id": "nada"}}))
         check("window_focus con un id invalido se rechaza",
               "error" in await respuesta("window_focus"))

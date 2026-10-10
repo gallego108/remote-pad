@@ -1,5 +1,14 @@
 # Historial de cambios
 
+## 1.11.0
+
+- **Iconos en «Programas abiertos».** Cada programa de la lista se muestra con
+  su icono de Windows (a 64 px, nítido en el celular y con su transparencia),
+  así se reconoce de un vistazo. Si un programa no tiene icono, se sigue
+  viendo su inicial sobre un color propio. Los iconos se guardan en memoria
+  en la PC y los de varias ventanas del mismo programa se envían una sola
+  vez.
+
 ## 1.10.0
 
 - **Programas abiertos.** Nuevo panel **🗂️ Programas** (también en el botón
