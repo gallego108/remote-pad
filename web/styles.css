@@ -643,8 +643,41 @@ textarea#kb-text:focus { border-color: var(--accent); }
   margin: 10px 0 0;
   padding: 0;
 }
-.ventanas li { min-width: 0; }
+.ventanas li {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  transition: max-height .25s ease, opacity .25s ease, margin .25s ease;
+  max-height: 120px;
+}
+.ventanas li.cerrando { max-height: 0; opacity: 0; margin-top: -6px; }
+/* Lo que asoma detrás al deslizar: verde a la izquierda (abrir), rojo a la
+   derecha (cerrar). Se ilumina cuando ya basta con soltar. */
+.ventana-fondo {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: .85rem;
+  font-weight: 700;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.ventana-fondo span { opacity: 0; transition: opacity .15s; }
+.ventanas li.a-abrir .ventana-fondo { background: #123b30; color: var(--accent-2); }
+.ventanas li.a-cerrar .ventana-fondo { background: #3d1820; color: var(--danger); }
+.ventanas li.a-abrir .fondo-abrir,
+.ventanas li.a-cerrar .fondo-cerrar { opacity: .55; }
+.ventanas li.listo .fondo-abrir,
+.ventanas li.listo .fondo-cerrar { opacity: 1; }
+.ventanas li.a-abrir.listo .ventana-fondo { background: #16584a; }
+.ventanas li.a-cerrar.listo .ventana-fondo { background: #6a1f2c; }
 .ventanas button {
+  position: relative;
+  touch-action: pan-y;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -658,6 +691,7 @@ textarea#kb-text:focus { border-color: var(--accent); }
   cursor: pointer;
 }
 .ventanas button:active { background: var(--surface-2); }
+.ventanas button.volviendo { transition: transform .2s ease; }
 .ventanas .activa button { border-color: var(--accent); }
 .ventanas .ventana-letra {
   display: grid;

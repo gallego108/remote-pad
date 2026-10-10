@@ -728,6 +728,24 @@ def window_icon(hwnd: int, ruta: str = "", tamano: int = 64):
             _user32.DestroyIcon(icono)
 
 
+def close_window(hwnd_id: int) -> dict:
+    """
+    Cierra uno de los programas abiertos (como su boton X: si hay algo sin
+    guardar, la aplicacion pregunta). Mismas reglas que focus_window: solo
+    ventanas de la barra de tareas, y nunca la consola de RemotePad.
+    """
+    if not available():
+        return {"error": "no disponible"}
+    if not hwnd_id or not _user32.IsWindow(hwnd_id) or not _en_barra_de_tareas(hwnd_id):
+        return {"error": "esa ventana ya no esta abierta"}
+    if hwnd_id == int(_kernel32.GetConsoleWindow() or 0):
+        return {"error": "es la consola de RemotePad"}
+    titulo = _titulo(hwnd_id)
+    if not _user32.PostMessageW(hwnd_id, _WM_SYSCOMMAND, _SC_CLOSE, 0):
+        return {"error": "Windows no dejo cerrar esa ventana"}
+    return {"ok": True, "title": titulo, "id": hwnd_id}
+
+
 def focus_window(hwnd_id: int) -> dict:
     """
     Trae al frente una ventana de la lista (y la restaura si esta minimizada).

@@ -469,6 +469,8 @@ function handleMessage(message) {
         pintarDispositivos(message.d);
       } else if (message.a === 'windows_list' && message.d && !message.d.error) {
         pintarVentanas(message.d.windows, message.d.icons);
+      } else if (message.a === 'window_close' && message.d && message.d.ok) {
+        toast('Cerrando: ' + (message.d.title || 'programa'), 1800);
       } else if (message.a === 'window_focus' && message.d && message.d.ok) {
         toast('En pantalla: ' + (message.d.title || 'programa'), 1800);
       } else if (message.a === 'window' && message.d && message.d.ok) {
@@ -1387,13 +1389,111 @@ function pintarVentanas(ventanas, iconos) {
     info.append(titulo, detalle);
 
     boton.append(letra, info);
-    boton.addEventListener('click', () => {
-      send('window_focus', { id: ventana.id });
-      buzz(14);
-      closeSheets();
-    });
-    item.append(boton);
+
+    // Detrás de la fila: lo que pasará al soltar según hacia dónde se deslice.
+    const fondo = document.createElement('div');
+    fondo.className = 'ventana-fondo';
+    fondo.setAttribute('aria-hidden', 'true');
+    const abrir = document.createElement('span');
+    abrir.className = 'fondo-abrir';
+    abrir.textContent = '▶ Abrir';
+    const cerrar = document.createElement('span');
+    cerrar.className = 'fondo-cerrar';
+    cerrar.textContent = 'Cerrar ✕';
+    fondo.append(abrir, cerrar);
+
+    item.append(fondo, boton);
     lista.append(item);
+    deslizarVentana(item, boton, ventana);
+  });
+}
+
+/* Cada fila de «Programas abiertos» se puede tocar o deslizar:
+   tocar o deslizar a la derecha = verlo en la PC; a la izquierda = cerrarlo.
+   El scroll vertical de la lista sigue siendo del navegador (pan-y). */
+const DESLIZAR_UMBRAL = 0.33;   // fracción del ancho para que cuente
+
+function abrirVentana(ventana) {
+  send('window_focus', { id: ventana.id });
+  buzz(14);
+  closeSheets();
+}
+
+function cerrarVentana(item, ventana) {
+  send('window_close', { id: ventana.id });
+  buzz([12, 40, 12]);
+  item.classList.add('cerrando');
+  // Si el programa pregunta «¿guardar?» no se cierra todavía: al refrescar
+  // la lista vuelve a aparecer, que es lo que de verdad hay en la PC.
+  setTimeout(pedirVentanas, 900);
+}
+
+function deslizarVentana(item, boton, ventana) {
+  let inicio = null;      // { x, y, id }
+  let dx = 0;
+  let horizontal = false;
+  let deslizado = false;  // evita el clic que llega justo después de soltar
+
+  const mover = (x) => {
+    boton.style.transform = x ? `translateX(${x}px)` : '';
+    item.classList.toggle('a-abrir', x > 0);
+    item.classList.toggle('a-cerrar', x < 0);
+    const listo = Math.abs(x) > boton.offsetWidth * DESLIZAR_UMBRAL;
+    if (listo && !item.classList.contains('listo')) buzz(8);
+    item.classList.toggle('listo', listo);
+  };
+
+  boton.addEventListener('pointerdown', (event) => {
+    if (inicio) return;
+    inicio = { x: event.clientX, y: event.clientY, id: event.pointerId };
+    dx = 0;
+    horizontal = false;
+    deslizado = false;
+    boton.classList.remove('volviendo');
+  });
+
+  boton.addEventListener('pointermove', (event) => {
+    if (!inicio || event.pointerId !== inicio.id) return;
+    const mx = event.clientX - inicio.x;
+    const my = event.clientY - inicio.y;
+    if (!horizontal) {
+      if (Math.abs(mx) < 10 || Math.abs(mx) < Math.abs(my)) return;
+      horizontal = true;
+      deslizado = true;
+      try { boton.setPointerCapture(event.pointerId); } catch (_) {}
+    }
+    dx = mx;
+    mover(dx);
+  });
+
+  const soltar = (event) => {
+    if (!inicio || event.pointerId !== inicio.id) return;
+    inicio = null;
+    if (!horizontal) return;
+    const umbral = boton.offsetWidth * DESLIZAR_UMBRAL;
+    boton.classList.add('volviendo');
+    if (dx > umbral) {
+      mover(0);
+      abrirVentana(ventana);
+    } else if (dx < -umbral) {
+      boton.style.transform = `translateX(${-boton.offsetWidth}px)`;
+      cerrarVentana(item, ventana);
+    } else {
+      mover(0);
+    }
+  };
+  boton.addEventListener('pointerup', soltar);
+  boton.addEventListener('pointercancel', (event) => {
+    if (inicio && event.pointerId === inicio.id) {
+      inicio = null;
+      boton.classList.add('volviendo');
+      mover(0);
+    }
+  });
+
+  boton.addEventListener('click', () => {
+    if (deslizado) { deslizado = false; return; }
+    abrirVentana(ventana);
   });
 }
 

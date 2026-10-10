@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.12.0">
+<link rel="stylesheet" href="styles.css?v=1.13.0">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.12.0';
+const REMOTEPAD_WEB = '1.13.0';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -466,8 +466,10 @@ const REMOTEPAD_WEB = '1.12.0';
 <section class="sheet" id="sheet-windows" hidden>
   <header><h2>Programas abiertos</h2><button class="close" data-close>✕</button></header>
   <div class="sheet-body">
-    <p class="tiny">Toca uno para verlo en la pantalla de la PC (si está
-    minimizado, se restaura).</p>
+    <p class="tiny"><b>Toca</b> o <b>desliza a la derecha →</b> para verlo en
+    la pantalla de la PC (si está minimizado, se restaura). <b>Desliza a la
+    izquierda ←</b> para cerrarlo (si hay algo sin guardar, el programa
+    pregunta en la PC).</p>
     <div class="sheet-actions">
       <button class="key" id="windows-refresh">⟳ Actualizar lista</button>
     </div>
@@ -509,8 +511,9 @@ const REMOTEPAD_WEB = '1.12.0';
 
     <h3>Programas abiertos</h3>
     <p>El botón <b>🗂️ Programas</b> (o <b>Ventana → Programas abiertos</b>)
-    muestra los programas de la barra de tareas de la PC. Toca uno y se pone
-    delante en la pantalla, aunque estuviera minimizado.</p>
+    muestra los programas de la barra de tareas de la PC. Toca uno (o
+    deslízalo a la derecha) y se pone delante en la pantalla, aunque estuviera
+    minimizado; deslízalo a la izquierda para cerrarlo.</p>
 
     <h3>Precisión</h3>
     <p>Si mueves el dedo <b>muy despacio</b>, el puntero avanza menos que el
@@ -648,7 +651,7 @@ const REMOTEPAD_WEB = '1.12.0';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.12.0"></script>
+<script src="app.js?v=1.13.0"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero

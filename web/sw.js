@@ -9,7 +9,7 @@
  * avisa a las pestanas abiertas para que se recarguen solas.
  */
 
-const CACHE = 'remotepad-v12';
+const CACHE = 'remotepad-v13';
 const FILES = [
   './',
   'index.html',

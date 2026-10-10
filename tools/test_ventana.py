@@ -265,6 +265,19 @@ def prueba_programas() -> None:
         r = con_escritorio(e, native_input.focus_window, hwnd)
         check(f"No activa una ventana {motivo}", "error" in r and not e.al_frente)
 
+    e = EscritorioFalso()
+    r = con_escritorio(e, native_input.close_window, 17)
+    check("Cerrar un programa de la lista manda SC_CLOSE a esa ventana",
+          r.get("ok") and e.mensajes == [(17, WM_SYSCOMMAND, SC_CLOSE)], str(r))
+    for hwnd, motivo in ((13, "de herramientas"), (16, "el escritorio"), (99, "inexistente")):
+        e = EscritorioFalso()
+        r = con_escritorio(e, native_input.close_window, hwnd)
+        check(f"No cierra una ventana {motivo}", "error" in r and not e.mensajes)
+    e = EscritorioFalso()
+    e.ventanas[CONSOLA] = (True, "RemotePad", 0, 0, "ConsoleWindowClass")
+    r = con_escritorio(e, native_input.close_window, CONSOLA)
+    check("No cierra la consola de RemotePad desde la lista", "error" in r and not e.mensajes)
+
 
 async def prueba_protocolo(puerto: int, pin: str) -> None:
     import aiohttp
@@ -307,6 +320,9 @@ async def prueba_protocolo(puerto: int, pin: str) -> None:
         await ws.send_str(json.dumps({"a": "window_focus", "d": {"id": "nada"}}))
         check("window_focus con un id invalido se rechaza",
               "error" in await respuesta("window_focus"))
+        await ws.send_str(json.dumps({"a": "window_close", "d": {"id": 0}}))
+        check("window_close con un id invalido se rechaza",
+              "error" in await respuesta("window_close"))
         await ws.close()
 
 

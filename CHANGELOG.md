@@ -1,5 +1,16 @@
 # Historial de cambios
 
+## 1.13.0
+
+- **Deslizar para abrir o cerrar programas.** En «Programas abiertos», desliza
+  una fila **a la derecha** para ponerla delante en la PC (igual que tocarla)
+  o **a la izquierda** para cerrar ese programa. Mientras deslizas asoma
+  detrás «▶ Abrir» en verde o «Cerrar ✕» en rojo, y se ilumina (con una
+  vibración) cuando ya basta con soltar; si no llegas, la fila vuelve a su
+  sitio. Cerrar funciona como el botón ✕ del programa: si hay algo sin
+  guardar, pregunta en la PC, y la lista se actualiza sola. Nunca se cierra
+  la consola de RemotePad.
+
 ## 1.12.0
 
 - **Botones organizados por grupos.** Arriba quedan el estado de la

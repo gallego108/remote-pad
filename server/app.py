@@ -78,7 +78,7 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.12.0"
+APP_VERSION = "1.13.0"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 16
@@ -1138,6 +1138,12 @@ class Gateway:
             # Programas abiertos, para elegir cual ver desde el celular.
             return await asyncio.get_running_loop().run_in_executor(
                 self.executor, c.windows
+            )
+
+        if action == "window_close":
+            hwnd = int(clamp_number(data.get("id"), 0, 2**63 - 1))
+            return await asyncio.get_running_loop().run_in_executor(
+                self.executor, lambda hwnd=hwnd: c.window_close(hwnd)
             )
 
         if action == "window_focus":

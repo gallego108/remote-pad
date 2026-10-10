@@ -337,6 +337,12 @@ class DesktopController:
                 ventana["icon"] = clave
         return {"windows": ventanas, "icons": imagenes}
 
+    def window_close(self, hwnd: int) -> dict:
+        """Cierra uno de los programas abiertos."""
+        self._check_pin()
+        with self._lock:
+            return native_input.close_window(hwnd)
+
     def window_focus(self, hwnd: int) -> dict:
         """Trae al frente uno de los programas abiertos."""
         self._check_pin()
