@@ -90,6 +90,8 @@ python tools\test_auth.py
 if errorlevel 1 set RESULT=1
 python tools\test_dispositivos.py
 if errorlevel 1 set RESULT=1
+python tools\test_https.py
+if errorlevel 1 set RESULT=1
 
 REM Paramos el servidor de pruebas.
 for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr LISTENING') do (

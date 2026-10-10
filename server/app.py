@@ -54,6 +54,7 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit(1)
 
 import auth
+import certificado
 import qr
 import learning
 import native_input
@@ -69,6 +70,9 @@ PROFILES_FILE = Path(
     or (Path(__file__).resolve().parent / "profiles.json")
 )
 DEFAULT_PORT = 8765
+# "https" con --https (ver certificado.py). Lo fija run() al arrancar y lo usan
+# todas las direcciones que se muestran o van dentro del QR.
+SCHEME = "http"
 
 # Sube al cambiar la parte web: sirve para comprobar en el celular que se esta
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
@@ -277,7 +281,7 @@ def print_qr_block(host: str, port: int, login_key: str, when: str = "") -> None
     Se usa tanto al arrancar como cada vez que la clave se renueva, para que
     el codigo que hay en pantalla nunca este caducado.
     """
-    url = f"http://{host}:{port}/?k={login_key}"
+    url = f"{SCHEME}://{host}:{port}/?k={login_key}"
     etiqueta = f"   ({when})" if when else ""
     print("=" * 58)
     print(f"   Escanea este QR y entra sin escribir nada:{etiqueta}")
@@ -293,7 +297,7 @@ def print_qr_block(host: str, port: int, login_key: str, when: str = "") -> None
     print(f"   Vale {corta_duracion(QR_VALID_SECONDS)} y se renueva solo: si tardas,")
     print("   aqui abajo aparece uno nuevo.")
     print("   ENTER = otro codigo ahora   ·   escribe q + ENTER = detener")
-    print(f"   Panel siempre vigente:  http://127.0.0.1:{port}/qr")
+    print(f"   Panel siempre vigente:  {SCHEME}://127.0.0.1:{port}/qr")
 
 
 def print_banner(host: str, port: int, pin: str, auth: bool,
@@ -311,9 +315,9 @@ def print_banner(host: str, port: int, pin: str, auth: bool,
         print("   Para volver a pedirlo: escribe  auth on  y pulsa ENTER.")
     print(line)
     print("   Abre esta direccion en el navegador del celular:")
-    print(f"       http://{host}:{port}")
+    print(f"       {SCHEME}://{host}:{port}")
     if host != "127.0.0.1":
-        print(f"   Desde esta misma PC:  http://127.0.0.1:{port}")
+        print(f"   Desde esta misma PC:  {SCHEME}://127.0.0.1:{port}")
     print("   (el celular debe estar en la MISMA red WiFi)")
     print()
     print("   SI EL CELULAR DICE 'no se puede conectar':")
@@ -325,6 +329,21 @@ def print_banner(host: str, port: int, pin: str, auth: bool,
         print_qr_block(host, port, login_key)
     print(line)
     print("   Ctrl+C para detener el servidor.\n")
+
+
+def print_https_info(host: str, port: int, certificados: "certificado.Certificados") -> None:
+    """Como conseguir que el celular confie en el certificado (una sola vez)."""
+    line = "=" * 58
+    print(line)
+    print("   HTTPS ACTIVO (trafico cifrado)")
+    print("   La primera vez el celular avisara de que la conexion no es")
+    print("   privada: el certificado es de esta PC, no de una empresa.")
+    print("   Para que confie sin avisos, instala la autoridad local:")
+    print(f"       {SCHEME}://{host}:{port}/ca.crt")
+    print("   Android: Ajustes > Seguridad > Cifrado y credenciales >")
+    print("            Instalar un certificado > Certificado de CA")
+    print(f"   Comprueba que su huella empiece por: {certificados.huella_ca}")
+    print(line + "\n")
 
 
 # ------------------------------------------------------------------- clientes
@@ -449,6 +468,8 @@ class Gateway:
         self.confirmar_nuevos = bool(load_config().get("confirm_new_devices", False))
         self._confirmaciones: "deque[asyncio.Future]" = deque()
         self._poda_fallos = 0.0
+        # Certificados HTTPS (solo con --https): run() los prepara.
+        self.certificados: Optional[certificado.Certificados] = None
         self.clients: set[Client] = set()
         # Puntero laser para presentaciones (se abre bajo demanda).
         self.laser = LaserPointer()
@@ -499,7 +520,7 @@ class Gateway:
         Tiene que ser la IP de la red local: 127.0.0.1 funcionaria solo en la
         propia PC, pero en el celular apuntaria a si mismo y no abriria nada.
         """
-        return f"http://{self.lan_host}:{self.port}/?k={self.acceso.login_key}"
+        return f"{SCHEME}://{self.lan_host}:{self.port}/?k={self.acceso.login_key}"
 
     def keep_pin_fresh(self) -> None:
         self.acceso.rotate_pin_if_needed()
@@ -1498,7 +1519,7 @@ def build_app(gateway: Gateway) -> web.Application:
                                      status=403)
 
         clave = gateway.acceso.reservar_clave_actual()
-        url = f"http://{gateway.lan_host}:{gateway.port}/?k={clave}"
+        url = f"{SCHEME}://{gateway.lan_host}:{gateway.port}/?k={clave}"
         return web.json_response({
             "ok": True,
             "key": clave,
@@ -1560,6 +1581,21 @@ def build_app(gateway: Gateway) -> web.Application:
             "matrix": qr.encode(url, "M"),
         })
 
+    async def ca_cert(request: web.Request) -> web.StreamResponse:
+        """
+        Autoridad local de HTTPS, para instalarla en el celular.
+
+        Es la parte PUBLICA (nunca la clave): darla a cualquiera no permite
+        suplantar al servidor. Solo existe con --https.
+        """
+        if gateway.certificados is None:
+            raise web.HTTPNotFound()
+        return web.Response(
+            body=gateway.certificados.ca.read_bytes(),
+            content_type="application/x-x509-ca-cert",
+            headers={"Content-Disposition": 'attachment; filename="remotepad-ca.crt"'},
+        )
+
     async def health(request: web.Request) -> web.StreamResponse:
         return web.json_response({
             "ok": True,
@@ -1604,6 +1640,7 @@ def build_app(gateway: Gateway) -> web.Application:
     app.router.add_post("/api/qr-refresh", qr_refresh)
     app.router.add_post("/api/stop", api_stop)
     app.router.add_post("/api/auth", api_auth)
+    app.router.add_get("/ca.crt", ca_cert)
     app.router.add_get("/{name}", static_file)
     app.router.add_get("/healthz", health)
     return app
@@ -1641,10 +1678,26 @@ async def run(args: argparse.Namespace) -> None:
         log.info("Cada dispositivo NUEVO necesitara tu permiso en esta PC "
                  "(para quitarlo: escribe 'confirmar off')")
 
+    contexto_ssl = None
+    certificados = None
+    if args.https:
+        global SCHEME
+        SCHEME = "https"
+        try:
+            certificados = certificado.preparar(gateway.lan_host)
+            contexto_ssl = certificados.contexto_ssl()
+        except certificado.FaltaCryptography as exc:
+            print(f"\n[ERROR] {exc}\n")
+            return
+        except Exception as exc:
+            print(f"\n[ERROR] No se pudo preparar el certificado HTTPS: {exc}\n")
+            return
+    gateway.certificados = certificados
+
     app = build_app(gateway)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
-    site = web.TCPSite(runner, args.host, args.port)
+    site = web.TCPSite(runner, args.host, args.port, ssl_context=contexto_ssl)
     try:
         await site.start()
     except OSError as exc:
@@ -1675,12 +1728,14 @@ async def run(args: argparse.Namespace) -> None:
         shown_host, args.port, gateway.acceso.pin, gateway.acceso.auth_required,
         login_key=gateway.acceso.login_key, show_qr=not args.no_qr,
     )
+    if certificados is not None:
+        print_https_info(shown_host, args.port, certificados)
     if not gateway.acceso.auth_required:
         # El recuadro va despues del banner para que no corte el logo.
         print(AVISO_SIN_ACCESO)
 
     if not args.no_browser and shown_host not in ("127.0.0.1", "localhost"):
-        webbrowser.open(f"http://127.0.0.1:{args.port}/qr")
+        webbrowser.open(f"{SCHEME}://127.0.0.1:{args.port}/qr")
 
     loop = asyncio.get_running_loop()
     gateway.stop_event = asyncio.Event()
@@ -1829,6 +1884,10 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--no-browser", action="store_true", help="no abrir el navegador al iniciar"
+    )
+    parser.add_argument(
+        "--https", action="store_true",
+        help="servir por HTTPS con un certificado local (necesita 'cryptography')"
     )
     parser.add_argument(
         "--confirmar", action="store_true",

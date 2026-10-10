@@ -32,6 +32,16 @@ if errorlevel 1 (
     )
 )
 
+REM HTTPS es opcional: su dependencia solo se instala si se pide --https.
+echo %* | findstr /i /c:"--https" >nul
+if not errorlevel 1 (
+    python -c "import cryptography" >nul 2>nul
+    if errorlevel 1 (
+        echo  Instalando lo necesario para HTTPS ^(cryptography^)...
+        python -m pip install --user cryptography
+    )
+)
+
 echo  Iniciando RemotePad...
 echo.
 python app.py %*

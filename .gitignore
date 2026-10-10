@@ -55,3 +55,6 @@ server/learning.json
 
 # Capturas de las pruebas de interfaz con el navegador
 .playwright-mcp/
+
+# Certificados de HTTPS (--https): la clave privada es un secreto local.
+server/https/
