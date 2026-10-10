@@ -215,6 +215,36 @@ const REMOTEPAD_WEB = '1.7.0';
       <button class="key" data-hotkey="print_screen" data-mods="" data-combo="">Captura pantalla</button>
     </div>
     <p class="tiny">Ctrl+Alt+Supr lo bloquea Windows por seguridad y no se puede simular.</p>
+
+    <h3 class="bloque">Mis atajos</h3>
+    <div class="grid" id="custom-shortcuts"></div>
+    <p class="tiny" id="custom-empty">Crea botones propios: una combinación de teclas,
+    un texto que escribes a menudo o varios pasos seguidos.</p>
+    <div class="row2 acciones-atajos">
+      <button class="key" id="btn-shortcut-new" type="button">＋ Crear un atajo</button>
+      <button class="key" id="btn-shortcut-edit" type="button">✎ Editar</button>
+    </div>
+
+    <form class="atajo-editor" id="shortcut-editor" hidden>
+      <label class="campo">
+        <span>Nombre del botón</span>
+        <input id="sc-name" type="text" maxlength="30" placeholder="Reabrir pestaña" autocomplete="off">
+      </label>
+      <ol class="pasos" id="sc-steps"></ol>
+      <div class="row3">
+        <button class="key" id="sc-add-combo" type="button">＋ Teclas</button>
+        <button class="key" id="sc-add-text" type="button">＋ Texto</button>
+        <button class="key" id="sc-add-wait" type="button">＋ Espera</button>
+      </div>
+      <p class="tiny">Teclas: escribe la combinación, por ejemplo <b>ctrl+shift+t</b>,
+      <b>alt+tab</b>, <b>win+d</b> o <b>f5</b>. Espera: milisegundos (1000 = 1 s).</p>
+      <p class="error" id="sc-error" hidden></p>
+      <div class="row3">
+        <button class="key primary" type="submit">Guardar</button>
+        <button class="key" id="sc-cancel" type="button">Cancelar</button>
+        <button class="key danger" id="sc-delete" type="button">Borrar</button>
+      </div>
+    </form>
   </div>
 </section>
 

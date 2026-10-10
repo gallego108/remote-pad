@@ -411,6 +411,52 @@ textarea#kb-text:focus { border-color: var(--accent); }
 .key.actual { border-color: var(--accent); color: var(--accent); }
 .key small { display: block; margin-top: 2px; color: var(--muted); font-size: .7rem; }
 
+/* Atajos propios: botones, modo edicion y editor de pasos. */
+.acciones-atajos { margin-top: 12px; }
+#custom-shortcuts:empty { display: none; }
+#custom-shortcuts.editando .key { border-style: dashed; border-color: var(--accent); }
+.key.danger { color: var(--danger); border-color: var(--danger); }
+.atajo-editor {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg-soft);
+}
+.atajo-editor .campo { display: block; font-size: .86rem; color: var(--muted); }
+.atajo-editor .campo span { display: block; margin-bottom: 6px; }
+.atajo-editor input,
+.atajo-editor select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.atajo-editor input:focus { border-color: var(--accent); }
+.pasos { margin: 12px 0; padding: 0; list-style: none; counter-reset: paso; }
+.pasos li {
+  display: grid;
+  grid-template-columns: 22px 74px 1fr 38px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: .8rem;
+}
+.pasos li::before {
+  counter-increment: paso;
+  content: counter(paso) ".";
+  color: var(--muted);
+}
+.pasos .tipo-paso { color: var(--accent); }
+.pasos .key { padding: 8px 0; }
+
 /* Lista de dispositivos con acceso (Ajustes). */
 .devices {
   list-style: none;
@@ -442,7 +488,6 @@ textarea#kb-text:focus { border-color: var(--accent); }
   border: 1px solid var(--accent);
 }
 .devices .key { flex: 0 0 auto; padding: 8px 12px; }
-.devices .key.danger { color: var(--danger); border-color: var(--danger); }
 .devices .devices-empty { color: var(--muted); }
 
 input[type="range"] {

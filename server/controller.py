@@ -314,6 +314,26 @@ class DesktopController:
         with self._lock:
             return native_input.type_text(text)
 
+    # ------------------------------------------------------- atajos propios
+    def run_macro(self, pasos: list[dict]) -> bool:
+        """
+        Ejecuta un atajo personalizado: combinaciones, texto y esperas, en orden.
+
+        Los pasos llegan ya validados (ver `validate_macro` en app.py). Si uno
+        falla se sigue con el resto, y se devuelve False al final; las teclas
+        no quedan pulsadas porque cada combinacion se suelta en el mismo envio.
+        """
+        todo_bien = True
+        for paso in pasos:
+            tipo = paso.get("tipo")
+            if tipo == "combo":
+                todo_bien = self.key_tap(paso["tecla"], paso.get("mods") or []) and todo_bien
+            elif tipo == "texto":
+                todo_bien = self.type_text(paso["texto"]) and todo_bien
+            elif tipo == "espera":
+                time.sleep(paso["ms"] / 1000.0)
+        return todo_bien
+
     # ------------------------------------------------------------ multimedia
     def media(self, action: str) -> bool:
         self._check_pin()

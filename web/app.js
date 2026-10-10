@@ -80,6 +80,9 @@ const DEFAULTS = {
   learnAdaptive: true,      // el servidor aprende tu sensibilidad
   learnTap: true,           // filtro que aprende a exigir mas en el toque de 2
   learnThreshold: true,     // umbral pinza/scroll aprendido de tus gestos
+  // Atajos propios, como texto JSON: asi viajan al perfil de la PC (que solo
+  // guarda valores simples) y no se pierden al borrar los datos del navegador.
+  atajos: '[]',
 };
 
 const SETTINGS_KEY = 'remotepad.settings';
@@ -118,6 +121,7 @@ function aplicarPerfil(guardado) {
   settings = { ...settings, ...limpio };
   saveSettings();
   refreshSettingsUI();
+  pintarAtajos();
 }
 
 /* --------------------------------------------------------------- estado */
@@ -1182,6 +1186,246 @@ function closeSheets() {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
 }
 
+/* ------------------------------------------------------- atajos propios
+   Cada atajo es { nombre, pasos } y cada paso uno de:
+     { tipo: 'combo', tecla: 't', mods: ['ctrl', 'shift'] }
+     { tipo: 'texto', texto: 'Un saludo,' }
+     { tipo: 'espera', ms: 500 }
+   El servidor los vuelve a validar y los ejecuta en orden (accion "macro"). */
+const MAX_ATAJOS = 24;
+const MAX_PASOS = 30;
+
+/* Las mismas teclas que acepta el servidor (controller.SPECIAL_KEYS), mas
+   algunos nombres en castellano para escribirlas comodamente. */
+const TECLAS_ESPECIALES = new Set([
+  'alt', 'backspace', 'caps_lock', 'cmd', 'ctrl', 'delete', 'down', 'end',
+  'enter', 'esc', 'home', 'insert', 'left', 'menu', 'num_lock', 'page_down',
+  'page_up', 'pause', 'print_screen', 'right', 'scroll_lock', 'shift', 'space',
+  'tab', 'up', 'win',
+  'f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9', 'f10', 'f11', 'f12',
+]);
+const ALIAS_TECLAS = {
+  control: 'ctrl', ctl: 'ctrl', mayus: 'shift', 'mayús': 'shift', windows: 'win',
+  super: 'win', supr: 'delete', suprimir: 'delete', del: 'delete', intro: 'enter',
+  return: 'enter', escape: 'esc', espacio: 'space', tabulador: 'tab',
+  arriba: 'up', abajo: 'down', izquierda: 'left', derecha: 'right',
+  inicio: 'home', fin: 'end', repag: 'page_up', avpag: 'page_down',
+  retroceso: 'backspace', borrar: 'backspace', imppnt: 'print_screen',
+};
+const MODIFICADORES = new Set(['ctrl', 'alt', 'shift', 'win']);
+
+function leerAtajos() {
+  try {
+    const lista = JSON.parse(settings.atajos || '[]');
+    return Array.isArray(lista) ? lista.filter((a) => a && Array.isArray(a.pasos)) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function guardarAtajos(lista) {
+  const texto = JSON.stringify(lista);
+  // El perfil de la PC acepta textos de hasta 8000 caracteres por ajuste.
+  if (texto.length > 7800) return 'Hay demasiados atajos o son muy largos.';
+  settings.atajos = texto;
+  saveSettings();
+  guardarPerfil();
+  return '';
+}
+
+/** "ctrl+shift+t" -> { tecla: 't', mods: ['ctrl', 'shift'] }, o un texto de error. */
+function parsearCombo(texto) {
+  const partes = String(texto || '').toLowerCase().split('+')
+    .map((p) => p.trim()).filter(Boolean)
+    .map((p) => ALIAS_TECLAS[p] || p);
+  if (!partes.length) return 'Escribe una combinación, por ejemplo ctrl+c';
+  const tecla = partes[partes.length - 1];
+  const mods = partes.slice(0, -1);
+  const malo = mods.find((m) => !MODIFICADORES.has(m));
+  if (malo) return `«${malo}» no es un modificador (usa ctrl, alt, shift o win)`;
+  if (tecla.length !== 1 && !TECLAS_ESPECIALES.has(tecla)) {
+    return `No conozco la tecla «${tecla}»`;
+  }
+  return { tecla, mods };
+}
+
+function describirCombo(paso) {
+  return [...(paso.mods || []), paso.tecla].join('+');
+}
+
+function ejecutarAtajo(atajo) {
+  send('macro', { pasos: atajo.pasos });
+  buzz(10);
+}
+
+const editorAtajos = { indice: -1, editando: false };
+
+function pintarAtajos() {
+  const contenedor = $('custom-shortcuts');
+  if (!contenedor) return;
+  const lista = leerAtajos();
+  contenedor.replaceChildren();
+  contenedor.classList.toggle('editando', editorAtajos.editando);
+  lista.forEach((atajo, indice) => {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'key';
+    boton.textContent = (editorAtajos.editando ? '✎ ' : '') + (atajo.nombre || 'Atajo');
+    boton.addEventListener('click', () => {
+      if (editorAtajos.editando) abrirEditorAtajo(indice);
+      else ejecutarAtajo(atajo);
+    });
+    contenedor.append(boton);
+  });
+  $('custom-empty').hidden = lista.length > 0;
+  $('btn-shortcut-edit').hidden = lista.length === 0;
+  $('btn-shortcut-edit').textContent = editorAtajos.editando ? '✓ Hecho' : '✎ Editar';
+  $('btn-shortcut-new').disabled = lista.length >= MAX_ATAJOS;
+}
+
+function filaPaso(paso) {
+  const fila = document.createElement('li');
+  fila.dataset.tipo = paso.tipo;
+  const tipo = document.createElement('span');
+  tipo.className = 'tipo-paso';
+  tipo.textContent = { combo: 'Teclas', texto: 'Texto', espera: 'Espera' }[paso.tipo];
+  const campo = document.createElement('input');
+  campo.type = paso.tipo === 'espera' ? 'number' : 'text';
+  campo.autocomplete = 'off';
+  if (paso.tipo === 'combo') {
+    campo.placeholder = 'ctrl+shift+t';
+    campo.value = paso.tecla ? describirCombo(paso) : '';
+    campo.autocapitalize = 'off';
+  } else if (paso.tipo === 'texto') {
+    campo.placeholder = 'Texto que se escribirá';
+    campo.maxLength = 1000;
+    campo.value = paso.texto || '';
+  } else {
+    campo.min = '0';
+    campo.max = '3000';
+    campo.step = '100';
+    campo.value = String(paso.ms ?? 500);
+  }
+  const quitar = document.createElement('button');
+  quitar.type = 'button';
+  quitar.className = 'key';
+  quitar.textContent = '✕';
+  quitar.setAttribute('aria-label', 'Quitar este paso');
+  quitar.addEventListener('click', () => fila.remove());
+  fila.append(tipo, campo, quitar);
+  return fila;
+}
+
+function anadirPaso(paso) {
+  const lista = $('sc-steps');
+  if (lista.children.length >= MAX_PASOS) {
+    mostrarErrorAtajo(`Como mucho ${MAX_PASOS} pasos.`);
+    return;
+  }
+  const fila = filaPaso(paso);
+  lista.append(fila);
+  fila.querySelector('input').focus();
+}
+
+function mostrarErrorAtajo(texto) {
+  const error = $('sc-error');
+  error.textContent = texto;
+  error.hidden = !texto;
+}
+
+function abrirEditorAtajo(indice) {
+  const atajo = indice >= 0 ? leerAtajos()[indice] : { nombre: '', pasos: [{ tipo: 'combo' }] };
+  if (!atajo) return;
+  editorAtajos.indice = indice;
+  $('sc-name').value = atajo.nombre || '';
+  $('sc-steps').replaceChildren(...atajo.pasos.map(filaPaso));
+  $('sc-delete').hidden = indice < 0;
+  mostrarErrorAtajo('');
+  $('shortcut-editor').hidden = false;
+  $('shortcut-editor').scrollIntoView({ block: 'nearest' });
+}
+
+function cerrarEditorAtajo() {
+  $('shortcut-editor').hidden = true;
+  editorAtajos.indice = -1;
+}
+
+/** Lee el editor y devuelve { nombre, pasos } o un texto de error. */
+function leerEditorAtajo() {
+  const nombre = $('sc-name').value.trim();
+  if (!nombre) return 'Ponle un nombre al botón.';
+  const pasos = [];
+  let espera = 0;
+  for (const [numero, fila] of [...$('sc-steps').children].entries()) {
+    const valor = fila.querySelector('input').value;
+    if (fila.dataset.tipo === 'combo') {
+      const combo = parsearCombo(valor);
+      if (typeof combo === 'string') return `Paso ${numero + 1}: ${combo}`;
+      pasos.push({ tipo: 'combo', ...combo });
+    } else if (fila.dataset.tipo === 'texto') {
+      if (!valor) return `Paso ${numero + 1}: el texto está vacío.`;
+      pasos.push({ tipo: 'texto', texto: valor });
+    } else {
+      const ms = Math.round(Number(valor));
+      if (!Number.isFinite(ms) || ms < 0 || ms > 3000) {
+        return `Paso ${numero + 1}: la espera va de 0 a 3000 ms.`;
+      }
+      espera += ms;
+      pasos.push({ tipo: 'espera', ms });
+    }
+  }
+  if (!pasos.length) return 'Añade al menos un paso.';
+  if (espera > 10000) return 'Las esperas suman más de 10 segundos.';
+  return { nombre: nombre.slice(0, 30), pasos };
+}
+
+function bindAtajos() {
+  $('btn-shortcut-new').addEventListener('click', () => {
+    editorAtajos.editando = false;
+    pintarAtajos();
+    abrirEditorAtajo(-1);
+  });
+  $('btn-shortcut-edit').addEventListener('click', () => {
+    editorAtajos.editando = !editorAtajos.editando;
+    if (!editorAtajos.editando) cerrarEditorAtajo();
+    pintarAtajos();
+    if (editorAtajos.editando) toast('Toca el atajo que quieras cambiar');
+  });
+  $('sc-add-combo').addEventListener('click', () => anadirPaso({ tipo: 'combo' }));
+  $('sc-add-text').addEventListener('click', () => anadirPaso({ tipo: 'texto' }));
+  $('sc-add-wait').addEventListener('click', () => anadirPaso({ tipo: 'espera', ms: 500 }));
+  $('sc-cancel').addEventListener('click', cerrarEditorAtajo);
+  $('sc-delete').addEventListener('click', () => {
+    const lista = leerAtajos();
+    const atajo = lista[editorAtajos.indice];
+    if (!atajo || !window.confirm(`¿Borrar el atajo «${atajo.nombre}»?`)) return;
+    lista.splice(editorAtajos.indice, 1);
+    guardarAtajos(lista);
+    cerrarEditorAtajo();
+    pintarAtajos();
+  });
+  $('shortcut-editor').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const atajo = leerEditorAtajo();
+    if (typeof atajo === 'string') {
+      mostrarErrorAtajo(atajo);
+      return;
+    }
+    const lista = leerAtajos();
+    if (editorAtajos.indice >= 0) lista[editorAtajos.indice] = atajo;
+    else lista.push(atajo);
+    const error = guardarAtajos(lista);
+    if (error) {
+      mostrarErrorAtajo(error);
+      return;
+    }
+    cerrarEditorAtajo();
+    pintarAtajos();
+    toast(`Atajo «${atajo.nombre}» guardado`);
+  });
+  pintarAtajos();
+}
+
 /* ------------------------------------------------------ varios monitores */
 let monitoresConocidos = [];
 
@@ -2070,6 +2314,7 @@ function entrarSinCodigo() {
 async function init() {
   bindUI();
   bindTyping();
+  bindAtajos();
   await qrLogin();
   connect();
 

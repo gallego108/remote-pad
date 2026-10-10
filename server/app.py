@@ -47,7 +47,7 @@ from urllib.parse import urlsplit
 from aiohttp import WSMsgType, web
 
 try:
-    from controller import DesktopController
+    from controller import SPECIAL_KEYS, DesktopController
 except ImportError as exc:  # pragma: no cover
     print("Falta el controlador del escritorio:", exc)
     print("Instala las dependencias con:  python -m pip install -r requirements.txt")
@@ -128,6 +128,60 @@ MAX_SETTINGS_KEYS = 60
 MAX_SETTINGS_KEY_LEN = 40
 MAX_SETTINGS_STR_LEN = 8000
 MAX_SETTINGS_BYTES = 32_000
+
+
+# Atajos personalizados: limites para que un atajo no pueda bloquear la PC
+# (ni el hilo que lo ejecuta) mas de unos segundos.
+MACRO_MAX_STEPS = 30
+MACRO_MAX_TEXT = 1000
+MACRO_MAX_WAIT_MS = 3000
+MACRO_MAX_TOTAL_WAIT_MS = 10_000
+MACRO_MODIFIERS = {"ctrl", "alt", "shift", "cmd", "win"}
+
+
+def validate_macro(pasos: Any) -> tuple[Optional[list[dict]], str]:
+    """
+    Comprueba los pasos de un atajo personalizado.
+
+    Devuelve (pasos_limpios, "") o (None, motivo). Solo se aceptan tres tipos:
+    combinacion de teclas, texto y espera, con nombres de tecla conocidos.
+    """
+    if not isinstance(pasos, list) or not pasos:
+        return None, "el atajo no tiene pasos"
+    if len(pasos) > MACRO_MAX_STEPS:
+        return None, f"como mucho {MACRO_MAX_STEPS} pasos"
+    limpios: list[dict] = []
+    espera_total = 0
+    for numero, paso in enumerate(pasos, 1):
+        if not isinstance(paso, dict):
+            return None, f"paso {numero} no valido"
+        tipo = paso.get("tipo")
+        if tipo == "combo":
+            tecla = str(paso.get("tecla", "")).strip().lower()
+            mods = paso.get("mods") or []
+            if not isinstance(mods, list) or len(mods) > 4:
+                return None, f"paso {numero}: modificadores no validos"
+            mods = [str(m).lower() for m in mods]
+            if any(m not in MACRO_MODIFIERS for m in mods):
+                return None, f"paso {numero}: modificador desconocido"
+            if not (len(tecla) == 1 or tecla in SPECIAL_KEYS):
+                return None, f"paso {numero}: tecla desconocida «{tecla[:20]}»"
+            limpios.append({"tipo": "combo", "tecla": tecla,
+                            "mods": ["cmd" if m == "win" else m for m in mods]})
+        elif tipo == "texto":
+            texto = str(paso.get("texto", ""))
+            if not texto or len(texto) > MACRO_MAX_TEXT:
+                return None, f"paso {numero}: texto vacio o demasiado largo"
+            limpios.append({"tipo": "texto", "texto": texto})
+        elif tipo == "espera":
+            ms = int(clamp_number(paso.get("ms"), 0, MACRO_MAX_WAIT_MS, 0))
+            espera_total += ms
+            if espera_total > MACRO_MAX_TOTAL_WAIT_MS:
+                return None, "demasiado tiempo de espera en total"
+            limpios.append({"tipo": "espera", "ms": ms})
+        else:
+            return None, f"paso {numero}: tipo desconocido"
+    return limpios, ""
 
 
 def load_profiles() -> dict:
@@ -1037,6 +1091,17 @@ class Gateway:
                 modifiers = []
             ok = await asyncio.get_running_loop().run_in_executor(
                 self.executor, c.key_tap, key, list(modifiers)
+            )
+            return {"ok": bool(ok)}
+
+        if action == "macro":
+            # Atajo personalizado del usuario: se ejecuta entero en un hilo,
+            # en orden y con sus esperas.
+            pasos, motivo = validate_macro(data.get("pasos"))
+            if pasos is None:
+                return {"error": motivo}
+            ok = await asyncio.get_running_loop().run_in_executor(
+                self.executor, c.run_macro, pasos
             )
             return {"ok": bool(ok)}
 
