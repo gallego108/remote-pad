@@ -1,5 +1,13 @@
 # Historial de cambios
 
+## 1.15.1
+
+- **El láser ya no roba el foco.** Al encender el 🔴 Láser, su capa
+  transparente se quedaba con el foco de Windows y lo que escribías desde el
+  celular no llegaba al programa que tenías delante. Ahora la capa es «no
+  activable», no sale en la barra de tareas ni en Alt+Tab, y si aun así
+  Windows le diera el foco, lo devuelve a la ventana que lo tenía.
+
 ## 1.15.0
 
 - **Encender RemotePad desde el celular (despertador).** Nuevo

@@ -52,20 +52,17 @@ def _leer_entrada() -> None:
     _estado["vivo"] = False
 
 
-def _click_through(ventana: "tk.Tk") -> None:
-    """Hace que la ventana no capture los clics (Windows)."""
+def _capa(ventana: "tk.Tk") -> int:
+    """
+    Hace que la ventana no capture los clics ni el foco del teclado (antes se
+    quedaba con el foco: lo que se escribia desde el celular no llegaba al
+    programa que tenias delante). Devuelve su hwnd de nivel superior.
+    """
     try:
-        user32 = __import__("ctypes").windll.user32
-        hwnd = user32.GetParent(ventana.winfo_id())
-        GWL_EXSTYLE = -20
-        WS_EX_LAYERED = 0x00080000
-        WS_EX_TRANSPARENT = 0x00000020
-        estilo = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-        user32.SetWindowLongW(
-            hwnd, GWL_EXSTYLE, estilo | WS_EX_LAYERED | WS_EX_TRANSPARENT
-        )
+        import native_input
+        return native_input.make_overlay(ventana.winfo_id())
     except Exception:
-        pass
+        return 0
 
 
 def main() -> int:
@@ -73,7 +70,17 @@ def main() -> int:
         print("tkinter no esta disponible", file=sys.stderr)
         return 1
 
+    try:
+        import native_input
+        anterior = native_input.foreground_window()
+    except Exception:
+        native_input = None
+        anterior = 0
+
     raiz = tk.Tk()
+    # Oculta mientras se prepara: los estilos de capa se ponen antes de que
+    # Windows la muestre (y la active).
+    raiz.withdraw()
     raiz.overrideredirect(True)
     try:
         raiz.attributes("-topmost", True)
@@ -94,7 +101,13 @@ def main() -> int:
         0, 0, 0, 0, fill=DOT_COLOR, outline=DOT_EDGE, width=3, state="hidden"
     )
     raiz.update_idletasks()
-    _click_through(raiz)
+    capa = _capa(raiz)
+    raiz.deiconify()
+    raiz.update()
+    if native_input is not None:
+        # Red de seguridad: si aun asi se quedo con el foco, se devuelve.
+        native_input.give_back_focus(anterior, capa)
+        raiz.after(300, lambda: native_input.give_back_focus(anterior, capa))
 
     threading.Thread(target=_leer_entrada, daemon=True, name="laser-stdin").start()
 

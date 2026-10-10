@@ -342,6 +342,12 @@ def _configure() -> None:
     _gdi32.GdiFlush.argtypes = ()
     _gdi32.GdiFlush.restype = wintypes.BOOL
 
+    # Capa del puntero laser.
+    _user32.GetParent.argtypes = (wintypes.HWND,)
+    _user32.GetParent.restype = wintypes.HWND
+    _user32.SetWindowLongPtrW.argtypes = (wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t)
+    _user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+
     # Historial de programas: nombre del programa y AUMID de las apps de la Store.
     _version.GetFileVersionInfoSizeW.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD))
     _version.GetFileVersionInfoSizeW.restype = wintypes.DWORD
@@ -766,6 +772,52 @@ def close_window(hwnd_id: int) -> dict:
     if not _user32.PostMessageW(hwnd_id, _WM_SYSCOMMAND, _SC_CLOSE, 0):
         return {"error": "Windows no dejo cerrar esa ventana"}
     return {"ok": True, "title": titulo, "id": hwnd_id}
+
+
+_WS_EX_LAYERED = 0x00080000
+_WS_EX_TRANSPARENT = 0x00000020
+
+
+def foreground_window() -> int:
+    """La ventana que tiene el foco ahora (0 si ninguna)."""
+    if not available():
+        return 0
+    return _raiz_activa()
+
+
+def make_overlay(hwnd_hijo: int) -> int:
+    """
+    Convierte una ventana de tkinter en una capa que no molesta (el laser):
+    no captura los clics (TRANSPARENT), no se queda con el foco del teclado
+    (NOACTIVATE) y no sale en la barra de tareas ni en Alt+Tab (TOOLWINDOW).
+    Recibe el winfo_id() de tkinter y devuelve la ventana de nivel superior.
+    Hay que llamarla con la ventana oculta, antes de mostrarla.
+    """
+    if not available() or not hwnd_hijo:
+        return 0
+    hwnd = _user32.GetParent(hwnd_hijo) or hwnd_hijo
+    estilo = _user32.GetWindowLongPtrW(hwnd, _GWL_EXSTYLE)
+    _user32.SetWindowLongPtrW(
+        hwnd, _GWL_EXSTYLE,
+        estilo | _WS_EX_LAYERED | _WS_EX_TRANSPARENT | _WS_EX_NOACTIVATE | _WS_EX_TOOLWINDOW,
+    )
+    return int(hwnd)
+
+
+def give_back_focus(anterior: int, capa: int) -> bool:
+    """
+    Si la capa se ha quedado con el foco, se lo devuelve a la ventana que lo
+    tenia. Lo puede hacer porque en ese momento el proceso de la capa es el
+    del primer plano. True si hubo que devolverlo.
+    """
+    if not available() or not anterior or not capa:
+        return False
+    if _raiz_activa() != int(capa):
+        return False
+    if not _user32.IsWindow(anterior):
+        return False
+    _user32.SetForegroundWindow(anterior)
+    return True
 
 
 def exe_description(ruta: str) -> str:

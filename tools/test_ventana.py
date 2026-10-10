@@ -279,6 +279,60 @@ def prueba_programas() -> None:
     check("No cierra la consola de RemotePad desde la lista", "error" in r and not e.mensajes)
 
 
+class CapaFalsa:
+    """Lo minimo de user32 para make_overlay y give_back_focus."""
+
+    def __init__(self, primer_plano):
+        self.estilos = {500: 0x100}       # 500 = marco de la ventana de tkinter
+        self.primer_plano = primer_plano
+        self.al_frente: list[int] = []
+
+    def GetParent(self, hwnd):
+        return 500 if hwnd == 501 else 0
+
+    def GetWindowLongPtrW(self, hwnd, indice):
+        return self.estilos.get(hwnd, 0)
+
+    def SetWindowLongPtrW(self, hwnd, indice, valor):
+        self.estilos[hwnd] = valor
+        return 0
+
+    def GetForegroundWindow(self):
+        return self.primer_plano
+
+    def GetAncestor(self, hwnd, flag):
+        return hwnd
+
+    def IsWindow(self, hwnd):
+        return True
+
+    def SetForegroundWindow(self, hwnd):
+        self.al_frente.append(hwnd)
+        self.primer_plano = hwnd
+        return True
+
+
+def prueba_laser() -> None:
+    print("\n== Capa del laser (API de Windows simulada) ==")
+    u = CapaFalsa(primer_plano=500)
+    originales = (native_input._user32, native_input.IS_WINDOWS)
+    native_input._user32, native_input.IS_WINDOWS = u, True
+    try:
+        capa = native_input.make_overlay(501)
+        estilo = u.estilos[500]
+        check("Se aplica a la ventana de nivel superior de tkinter", capa == 500)
+        check("No captura los clics", bool(estilo & 0x20) and bool(estilo & 0x80000))
+        check("No se queda con el foco (NOACTIVATE)", bool(estilo & 0x08000000))
+        check("No sale en la barra de tareas ni en Alt+Tab", bool(estilo & 0x80))
+        check("Conserva los estilos que ya tenia", bool(estilo & 0x100))
+        check("Si se quedo con el foco, lo devuelve a la ventana anterior",
+              native_input.give_back_focus(777, 500) and u.al_frente == [777])
+        check("Si no lo tiene, no toca nada",
+              not native_input.give_back_focus(888, 500) and u.al_frente == [777])
+    finally:
+        native_input._user32, native_input.IS_WINDOWS = originales
+
+
 async def prueba_protocolo(puerto: int, pin: str) -> None:
     import aiohttp
 
@@ -332,7 +386,7 @@ async def prueba_protocolo(puerto: int, pin: str) -> None:
               str(datos)[:200])
         check("El historial no lleva rutas", "path" not in json.dumps(datos))
         await ws.send_str(json.dumps({"a": "program_launch",
-                                      "d": {"id": "C:\Windows\System32\calc.exe"}}))
+                                      "d": {"id": r"C:\Windows\System32\calc.exe"}}))
         check("program_launch solo acepta ids del historial (no rutas)",
               "error" in await respuesta("program_launch"))
         await ws.send_str(json.dumps({"a": "program_forget", "d": {"id": "noexiste"}}))
@@ -349,6 +403,7 @@ def main() -> int:
 
     prueba_nativa()
     prueba_programas()
+    prueba_laser()
     if args.port and args.pin:
         asyncio.run(prueba_protocolo(args.port, args.pin))
 
