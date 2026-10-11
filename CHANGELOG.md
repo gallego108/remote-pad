@@ -1,7 +1,13 @@
 # Historial de cambios
 
-## Sin publicar
+## 1.16.0
 
+- **Aviso cuando una ventana de administrador bloquea el control.** Si abres
+  el Administrador de tareas (u otra ventana) con permisos de administrador,
+  Windows no deja que el móvil la mueva, y antes parecía que la app se había
+  roto. Ahora el móvil muestra un aviso, el panel de escritorio lo muestra
+  arriba y con una notificación de Windows, y se quita solo al hacer clic en
+  otra ventana.
 - **Panel de escritorio.** Nueva ventana para la PC (`escritorio.bat`), sin
   consola negra: encender y parar el servidor, QR y PIN con cuenta atrás,
   registro en vivo con filtros, dispositivos (con revocar), ajustes y programas.

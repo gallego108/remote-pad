@@ -57,6 +57,7 @@ PRUEBAS = [
     Prueba("test_historial.py"),
     Prueba("test_despertador.py"),
     Prueba("test_admin.py"),
+    Prueba("test_actualizador.py"),
     Prueba("test_client.py", ["--port", "{puerto}", "--pin", "{pin}", "--cursor"],
            servidor=True, escritorio=True),
     Prueba("test_drag.py", ["--port", "{puerto}", "--pin", "{pin}"],

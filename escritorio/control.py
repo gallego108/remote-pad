@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Any, Optional
 
 RAIZ = Path(__file__).resolve().parent.parent
-SERVIDOR = RAIZ / "server"
+# Empaquetado (PyInstaller), los recursos (web, iconos, app.py para la version) van dentro del ejecutable.
+ES_EJECUTABLE = bool(getattr(sys, "frozen", False))
+RECURSOS = Path(getattr(sys, "_MEIPASS", RAIZ))
+SERVIDOR = RECURSOS / "server" if ES_EJECUTABLE else RAIZ / "server"
 if str(SERVIDOR) not in sys.path:
     sys.path.insert(0, str(SERVIDOR))
 
@@ -131,10 +134,18 @@ def python_de_fondo() -> str:
     return str(candidato if candidato.is_file() else sys.executable)
 
 
+def ejecutable_servidor() -> Path:
+    """Empaquetado, el servidor va en la subcarpeta 'servidor' de la instalacion."""
+    return Path(sys.executable).parent / "servidor" / "RemotePadServidor.exe"
+
+
 def arrancar(ajustes: dict[str, Any]) -> subprocess.Popen:
-    """Arranca app.py en segundo plano, sin ventana, y guarda su salida en consola.log."""
-    args = [python_de_fondo(), "app.py", "--no-browser",
-            "--port", str(ajustes["puerto"]), "--host", ajustes["red"]]
+    """Arranca el servidor en segundo plano, sin ventana, y guarda su salida en consola.log."""
+    if ES_EJECUTABLE:
+        args = [str(ejecutable_servidor())]
+    else:
+        args = [python_de_fondo(), "app.py"]
+    args += ["--no-browser", "--port", str(ajustes["puerto"]), "--host", ajustes["red"]]
     if ajustes["https"]:
         args.append("--https")
     entorno = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
@@ -172,19 +183,42 @@ def carpeta_inicio() -> Path:
             / "Programs" / "Startup")
 
 
+def crear_acceso(destino: Path, objetivo: Path, argumentos: str, carpeta: Path,
+                 descripcion: str, icono: Path) -> None:
+    """Crea (o actualiza) un acceso directo .lnk con PowerShell, sin depender de tools/."""
+    script = (
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:RP_LNK);"
+        "$s.TargetPath = $env:RP_CMD;"
+        "$s.Arguments = $env:RP_ARGS;"
+        "$s.WorkingDirectory = $env:RP_DIR;"
+        "$s.IconLocation = $env:RP_ICO + ',0';"
+        "$s.Description = $env:RP_DESC;"
+        "$s.Save()"
+    )
+    entorno = dict(os.environ, RP_LNK=str(destino), RP_CMD=str(objetivo), RP_ARGS=argumentos,
+                   RP_DIR=str(carpeta), RP_ICO=str(icono), RP_DESC=descripcion)
+    subprocess.run(["powershell", "-NoProfile", "-Command", script], env=entorno, check=True)
+
+
 def sincronizar_inicio(activo: bool) -> None:
     """Crea o quita el acceso directo que abre la app al iniciar sesion (en segundo plano)."""
-    sys.path.insert(0, str(RAIZ / "tools"))
-    from crear_acceso_directo import crear_enlace  # noqa: E402
-
     enlace = carpeta_inicio() / RUTA_ACCESO
     if not activo:
         if enlace.exists():
             enlace.unlink()
         return
-    script = Path(__file__).resolve().parent / "remotepad_escritorio.py"
-    crear_enlace(enlace, Path(python_de_fondo()), f'"{script}" --en-segundo-plano',
-                 script.parent, "RemotePad: panel de escritorio (en segundo plano)")
+    descripcion = "RemotePad: panel de escritorio (en segundo plano)"
+    icono = RECURSOS / "remotepad.ico"
+    if ES_EJECUTABLE:
+        objetivo = Path(sys.executable)
+        argumentos = "--en-segundo-plano"
+        carpeta = objetivo.parent
+    else:
+        script = Path(__file__).resolve().parent / "remotepad_escritorio.py"
+        objetivo = Path(python_de_fondo())
+        argumentos = f'"{script}" --en-segundo-plano'
+        carpeta = script.parent
+    crear_acceso(enlace, objetivo, argumentos, carpeta, descripcion, icono)
 
 
 # ------------------------------------------------------------------ registro

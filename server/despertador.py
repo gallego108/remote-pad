@@ -42,8 +42,15 @@ from urllib.parse import urlsplit
 
 SERVER_DIR = Path(__file__).resolve().parent
 RAIZ = SERVER_DIR.parent
-WEB = RAIZ / "web"
+# Empaquetado (instalador): la web va dentro del ejecutable y el servidor esta junto a el.
+ES_EJECUTABLE = bool(getattr(sys, "frozen", False))
+WEB = Path(getattr(sys, "_MEIPASS", RAIZ)) / "web"
 LANZADOR = RAIZ / "iniciar.bat"
+# Si RemotePad esta instalado, se enciende el servidor instalado, oculto.
+SERVIDOR_INSTALADO = (
+    Path(sys.executable).parent.parent / "servidor" / "RemotePadServidor.exe" if ES_EJECUTABLE
+    else Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "RemotePad" / "servidor" / "RemotePadServidor.exe"
+)
 sys.path.insert(0, str(SERVER_DIR))
 
 import auth  # noqa: E402
@@ -193,7 +200,17 @@ class Despertador:
             self._cedido_en = 0.0          # se vuelve a ocupar en la siguiente vuelta
 
     def _lanzar_servidor(self) -> None:
-        """Abre iniciar.bat con su consola (via cmd.exe, firmado: sin aviso)."""
+        """
+        Enciende el servidor. Instalado: el ejecutable, sin ventana. En el proyecto:
+        iniciar.bat con su consola (via cmd.exe, firmado: sin aviso).
+        """
+        if SERVIDOR_INSTALADO.is_file():
+            subprocess.Popen([str(SERVIDOR_INSTALADO), "--no-browser", *self.args_servidor],
+                             cwd=str(SERVIDOR_INSTALADO.parent),
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            return
         cmd = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "cmd.exe"
         extra = " ".join(self.args_servidor)
         linea = f'"{cmd}" /c ""{LANZADOR}" --no-browser {extra}"'
@@ -330,7 +347,8 @@ def _instancia_unica(puerto: int):
 
 
 def _configurar_registro() -> None:
-    manejador = RotatingFileHandler(SERVER_DIR / "despertador.log", maxBytes=200_000,
+    registro = Path(os.environ.get("REMOTEPAD_DESPERTADOR_LOG") or (SERVER_DIR / "despertador.log"))
+    manejador = RotatingFileHandler(registro, maxBytes=200_000,
                                     backupCount=1, encoding="utf-8")
     manejador.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     log.addHandler(manejador)

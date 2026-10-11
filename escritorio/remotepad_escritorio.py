@@ -27,10 +27,10 @@ import webview
 
 import control
 import auth
+import actualizador
 
-AQUI = Path(__file__).resolve().parent
-UI = AQUI / "ui" / "index.html"
-ICONO = control.RAIZ / "remotepad.ico"
+UI = control.RECURSOS / "escritorio" / "ui" / "index.html"
+ICONO = control.RECURSOS / "remotepad.ico"
 NOMBRE_MUTEX = "RemotePadPanelEscritorio"
 
 
@@ -156,12 +156,34 @@ class Api:
         return {"ok": nombre is not None, "nombre": nombre}
 
     # ------------------------------------------------------------- registro
+    # ----------------------------------------------------------- actualizar
+    def buscar_actualizacion(self) -> dict[str, Any]:
+        return actualizador.buscar(version_instalada())
+
+    def instalar_actualizacion(self, url: str, sha256: str) -> dict[str, Any]:
+        """
+        Descarga la version nueva, comprueba su huella y abre el instalador.
+        El instalador reemplaza los archivos del programa, asi que antes se para
+        el servidor y el panel se cierra.
+        """
+        try:
+            instalador = actualizador.descargar(url, sha256)
+        except (ValueError, OSError) as error:
+            return {"ok": False, "motivo": str(error)}
+        if self._en_marcha():
+            self.parar()
+        import os
+        os.startfile(str(instalador))
+        # Un instante para que la interfaz reciba la respuesta antes de cerrarse.
+        threading.Timer(1.5, self.salir, args=(False,)).start()
+        return {"ok": True}
+
     def registro(self) -> list[dict[str, Any]]:
         return control.leer_registro()
 
     def abrir_carpeta_registro(self) -> None:
         import os
-        os.startfile(str(control.SERVIDOR))
+        os.startfile(str(control.LOG_FILE.parent))
 
     # ------------------------------------------------------------ programas
     def programas(self) -> list[dict[str, Any]]:
@@ -234,7 +256,8 @@ class Bandeja:
         threading.Thread(target=self._vigilar, daemon=True, name="bandeja-estado").start()
 
     def _vigilar(self) -> None:
-        """Mantiene el texto del menu al dia (encendido o apagado)."""
+        """Mantiene el texto del menu al dia y avisa si una ventana elevada bloquea el control."""
+        elevado = False
         while not self._parar.is_set():
             ajustes = self.api._ajustes()
             nuevo = control.servidor_en_marcha(ajustes["puerto"], ajustes["https"])
@@ -244,6 +267,18 @@ class Bandeja:
                     self.icono.update_menu()
                 except Exception:
                     pass
+            if nuevo:
+                datos = control.estado_servidor(ajustes["puerto"], ajustes["https"]) or {}
+                ahora = bool(datos.get("aviso_elevado"))
+                if ahora and not elevado:
+                    try:
+                        self.icono.notify(
+                            "Hay una ventana con permisos de administrador delante. "
+                            "Windows no deja que el móvil la mueva: haz clic en otra ventana.",
+                            "RemotePad")
+                    except Exception:
+                        pass
+                elevado = ahora
             self._parar.wait(2.0)
 
     def _abrir(self, icono, item) -> None:

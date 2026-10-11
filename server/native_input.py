@@ -93,6 +93,7 @@ MEDIA_KEYS = {
 if IS_WINDOWS:
     _user32 = ctypes.windll.user32
     _kernel32 = ctypes.windll.kernel32
+    _advapi32 = ctypes.windll.advapi32
     _gdi32 = ctypes.windll.gdi32
     _version = ctypes.windll.version
     try:
@@ -102,6 +103,7 @@ if IS_WINDOWS:
 else:  # pragma: no cover
     _user32 = None
     _kernel32 = None
+    _advapi32 = None
     _gdi32 = None
     _version = None
     _dwmapi = None
@@ -245,6 +247,17 @@ def _configure() -> None:
         ctypes.POINTER(wintypes.DWORD),
     )
     _kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+
+    # Permisos de la ventana de delante (ver foreground_elevated).
+    _advapi32.OpenProcessToken.argtypes = (
+        wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)
+    )
+    _advapi32.OpenProcessToken.restype = wintypes.BOOL
+    _advapi32.GetTokenInformation.argtypes = (
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    )
+    _advapi32.GetTokenInformation.restype = wintypes.BOOL
 
 
     # Varios monitores.
@@ -871,6 +884,51 @@ def _aumid_de_ventana(hwnd) -> str:
     except Exception:
         pass
     return ""
+
+
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+TOKEN_QUERY = 0x0008
+TOKEN_ELEVATION_CLASS = 20      # TokenElevation en GetTokenInformation
+
+
+def foreground_elevated() -> bool:
+    """
+    True si la ventana de delante tiene permisos de administrador (por ejemplo,
+    el Administrador de tareas abierto como administrador).
+
+    Windows no deja que un programa sin esos permisos envie movimientos ni
+    pulsaciones a esas ventanas (UIPI): el movil sigue "conectado" pero no se
+    mueve nada. Se mira el token del proceso, que se puede consultar sin ser
+    administrador. Si ni siquiera se puede abrir el proceso, se supone elevado.
+    """
+    if not available():
+        return False
+    hwnd = _user32.GetForegroundWindow()
+    if not hwnd:
+        return False
+    pid = wintypes.DWORD(0)
+    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if not pid.value:
+        return False
+    proceso = _kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
+    if not proceso:
+        return True
+    try:
+        token = wintypes.HANDLE()
+        if not _advapi32.OpenProcessToken(proceso, TOKEN_QUERY, ctypes.byref(token)):
+            return True
+        try:
+            elevacion = wintypes.DWORD(0)
+            devuelto = wintypes.DWORD(0)
+            ok = _advapi32.GetTokenInformation(
+                token, TOKEN_ELEVATION_CLASS, ctypes.byref(elevacion),
+                ctypes.sizeof(elevacion), ctypes.byref(devuelto),
+            )
+            return bool(ok) and elevacion.value != 0
+        finally:
+            _kernel32.CloseHandle(token)
+    finally:
+        _kernel32.CloseHandle(proceso)
 
 
 def foreground_program() -> Optional[dict]:

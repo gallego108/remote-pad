@@ -129,6 +129,7 @@ async function refrescarEstado() {
   pintarBarra();
   pintarInicio();
   pintarPendiente();
+  $('aviso-elevado').classList.toggle('oculto', !hayAvisoElevado(datos.servidor));
   pintarAjustesSeguridad();
   pintarDispositivos();
 }
@@ -264,6 +265,10 @@ function tictac() {
 }
 
 // ------------------------------------------------------- avisos y acceso
+function hayAvisoElevado(servidor) {
+  return !!(servidor && servidor.aviso_elevado);
+}
+
 function pintarPendiente() {
   const p = estado.servidor.pendiente;
   $('pendiente').classList.toggle('oculto', !p);
@@ -506,6 +511,51 @@ async function parar() {
   refrescarEstado();
 }
 
+// ------------------------------------------------------------ actualizar
+let actualizacionLista = null;
+
+async function buscarActualizacion() {
+  $('act-estado').textContent = 'Buscando…';
+  $('act-instalar').classList.add('oculto');
+  const datos = await llamar('buscar_actualizacion');
+  if (datos && datos.disponible) {
+    actualizacionLista = datos;
+    $('act-estado').textContent = 'Hay una versión nueva: ' + datos.version
+      + ' (tienes la ' + (estado.servidor.version || '?') + ').';
+    $('act-notas').textContent = datos.notas || '';
+    $('act-instalar').classList.remove('oculto');
+    $('act-instalar').disabled = false;
+  } else {
+    actualizacionLista = null;
+    $('act-estado').textContent = datos && datos.error
+      ? datos.error
+      : 'Ya tienes la última versión (' + ((datos && datos.version) || estado.servidor.version || '?') + ').';
+    $('act-notas').textContent = '';
+  }
+}
+
+async function instalarActualizacion() {
+  if (!actualizacionLista) return;
+  const quiere = await preguntar({
+    titulo: 'Actualizar RemotePad',
+    texto: 'Se parará el servidor, se cerrará este panel y se abrirá el instalador de la versión '
+      + actualizacionLista.version + '. Windows te pedirá confirmar el aviso de seguridad.',
+    acciones: [
+      { texto: 'Cancelar', valor: false },
+      { texto: 'Actualizar', clase: 'boton-principal', valor: true },
+    ],
+  });
+  if (!quiere) return;
+  $('act-instalar').disabled = true;
+  $('act-estado').textContent = 'Descargando y comprobando la huella…';
+  const datos = await llamar('instalar_actualizacion', actualizacionLista.url, actualizacionLista.sha256);
+  if (!datos || !datos.ok) {
+    $('act-instalar').disabled = false;
+    $('act-estado').textContent = 'No se pudo actualizar.';
+    avisar((datos && datos.motivo) || 'No se pudo actualizar', true);
+  }
+}
+
 async function salirDeLaApp() {
   const eleccion = await preguntar({
     titulo: 'Salir de RemotePad',
@@ -531,6 +581,8 @@ function iniciar() {
   $('inicio-encender').addEventListener('click', encender);
   $('btn-parar').addEventListener('click', parar);
   $('btn-salir-app').addEventListener('click', salirDeLaApp);
+  $('act-buscar').addEventListener('click', buscarActualizacion);
+  $('act-instalar').addEventListener('click', instalarActualizacion);
   $('btn-qr').addEventListener('click', nuevoQr);
   $('btn-pin').addEventListener('click', nuevoPin);
 

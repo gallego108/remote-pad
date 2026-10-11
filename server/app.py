@@ -65,7 +65,8 @@ from auth import (QR_GRACE_SECONDS, QR_VALID_SECONDS, device_name, load_config,
                   save_config, read_json, write_json_atomic)
 
 # --------------------------------------------------------------------- ajustes
-WEB_ROOT = (Path(__file__).resolve().parent.parent / "web").resolve()
+# Empaquetado (PyInstaller) la web va dentro del ejecutable, junto a los datos.
+WEB_ROOT = (Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "web").resolve()
 # Preferencias de cada dispositivo (velocidad, gestos, etc.), para no tener que
 # volver a ajustarlas: se guardan en el servidor, ligadas al acceso del celular.
 PROFILES_FILE = Path(
@@ -81,7 +82,7 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.15.1"
+APP_VERSION = "1.16.0"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 16
@@ -454,9 +455,12 @@ class LaserPointer:
         if self._process is not None and self._process.poll() is None:
             return True
         script = Path(__file__).resolve().parent / "laser.py"
+        # Empaquetado, sys.executable es el propio servidor: se le pide que haga de laser.
+        comando = ([sys.executable, "--laser"] if getattr(sys, "frozen", False)
+                   else [sys.executable, str(script)])
         try:
             self._process = subprocess.Popen(
-                [sys.executable, str(script)],
+                comando,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -558,6 +562,9 @@ class Gateway:
         self.historial = historial.Historial()
         self._prog_hwnd = 0
         self._prog_check = 0.0
+        # Ventana con permisos de administrador delante (Windows bloquea el control).
+        self.aviso_elevado = False
+        self._elev_check = 0.0
 
         self.executor = ThreadPoolExecutor(
             max_workers=3, thread_name_prefix="input"
@@ -795,6 +802,30 @@ class Gateway:
             self.learning.guardar()
             self.historial.guardar()
 
+    def elevacion_tick(self) -> None:
+        """
+        Avisa a los moviles y a la app de escritorio cuando la ventana de delante
+        tiene permisos de administrador: Windows no deja controlarla, y sin aviso
+        parece que el touchpad se ha roto.
+        """
+        ahora = time.monotonic()
+        if ahora - self._elev_check < 1.0:
+            return
+        self._elev_check = ahora
+        try:
+            elevada = native_input.foreground_elevated()
+        except Exception:
+            elevada = False
+        if elevada == self.aviso_elevado:
+            return
+        self.aviso_elevado = elevada
+        if elevada:
+            log.warning("Ventana con permisos de administrador delante: Windows no deja "
+                        "controlarla desde el movil (haz clic en otra ventana)")
+        else:
+            log.info("Ya no hay ventana con permisos de administrador delante")
+        self.broadcast({"t": "aviso_elevado", "activo": elevada})
+
     def historial_tick(self) -> None:
         """
         Apunta en el historial el programa que tienes delante cuando cambias de
@@ -898,6 +929,7 @@ class Gateway:
             self.keep_pin_fresh()
             self.keep_awake_tick()
             self.aprender_tick()
+            self.elevacion_tick()
 
             # Si la clave del QR cambio, se vuelve a dibujar en la consola:
             # asi el codigo que hay en pantalla nunca esta caducado. Se omite
@@ -1354,6 +1386,7 @@ class Gateway:
             "id": client.client_id,
             "screen": list(self.controller.screen_size),
             "device": (client.device or "")[:8],
+            "aviso_elevado": self.aviso_elevado,
         }
         if token:
             payload["token"] = token
@@ -1883,6 +1916,7 @@ def build_app(gateway: Gateway) -> web.Application:
             "clientes": len(gateway.clients),
             "pendiente": gateway.pendiente,
             "apagando": gateway.shutting_down,
+            "aviso_elevado": gateway.aviso_elevado,
             "dispositivos": gateway.lista_dispositivos(),
         })
 
@@ -2131,8 +2165,9 @@ async def console_commands(gateway: Gateway) -> None:
         while True:
             try:
                 linea = input()
-            except (EOFError, KeyboardInterrupt, OSError, ValueError):
-                # Sin entrada disponible (por ejemplo si stdin esta cerrado):
+            except (EOFError, KeyboardInterrupt, OSError, ValueError, RuntimeError):
+                # Sin entrada disponible (por ejemplo si stdin esta cerrado, o el
+                # ejecutable empaquetado no tiene consola: RuntimeError):
                 # no hay nada mas que hacer, el hilo termina.
                 return
             try:

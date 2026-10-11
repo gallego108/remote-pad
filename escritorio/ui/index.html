@@ -37,6 +37,11 @@
     </aside>
 
     <main class="contenido">
+      <div class="aviso-elevado oculto" id="aviso-elevado">
+        <strong>Hay una ventana con permisos de administrador delante.</strong>
+        <span>Windows no deja que el móvil la mueva (por ejemplo, el Administrador de tareas abierto como administrador). Haz clic en otra ventana y vuelve a funcionar.</span>
+      </div>
+
       <div class="aviso-pendiente oculto" id="pendiente">
         <div>
           <strong id="pendiente-nombre"></strong>
@@ -198,7 +203,15 @@
 
         <div class="tarjeta">
           <h2>Acerca de</h2>
-          <div class="fila-dato"><span>Versión del servidor</span><strong id="acerca-version">—</strong></div>
+          <div class="fila-dato"><span>Versión instalada</span><strong id="acerca-version">—</strong></div>
+          <div class="actualizacion">
+            <p class="sub" id="act-estado">Comprueba si hay una versión nueva en GitHub.</p>
+            <div class="acciones">
+              <button class="boton boton-suave" id="act-buscar">Buscar actualizaciones</button>
+              <button class="boton boton-principal oculto" id="act-instalar">Actualizar</button>
+            </div>
+            <p class="sub" id="act-notas"></p>
+          </div>
         </div>
       </section>
 

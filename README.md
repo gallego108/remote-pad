@@ -442,6 +442,16 @@ apagar y reiniciar desde *Ajustes → Aprendizaje*.
 
 ## Si algo no funciona
 
+### Con el Administrador de tareas (u otra ventana de administrador) el móvil no mueve el cursor
+
+Windows no deja que un programa sin permisos de administrador mueva el cursor
+ni escriba en una ventana que sí los tiene. Es una protección de Windows, no
+un fallo de RemotePad. Haz clic en otra ventana y el móvil vuelve a funcionar.
+RemotePad avisa en el móvil, en el panel y con una notificación de Windows
+cuando pasa. Para evitarlo habría que ejecutar RemotePad como administrador,
+lo que no recomendamos: el móvil tendría control total de la PC.
+
+
 | Síntoma | Solución |
 |---|---|
 | **El celular dice "no se puede conectar"** | Ejecuta **`abrir-firewall.bat`** (necesita permisos de administrador). Windows no tiene regla de entrada TCP para Python. |

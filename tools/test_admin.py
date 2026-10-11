@@ -99,6 +99,8 @@ def pruebas_api(proceso: subprocess.Popen) -> None:
     check("GET /api/admin/estado desde la PC responde 200", codigo == 200, f"codigo={codigo}")
     check("el estado trae PIN, acceso y dispositivos",
           bool(datos) and "pin" in datos and "auth_required" in datos and "dispositivos" in datos)
+    check("el estado trae el aviso de ventana con permisos de administrador",
+          bool(datos) and datos.get("aviso_elevado") is False)
 
     codigo, _ = llamar("GET", "/api/admin/estado", cabeceras={"Origin": "http://evil.example"})
     check("una web (cabecera Origin) no puede leer el estado", codigo == 403, f"codigo={codigo}")

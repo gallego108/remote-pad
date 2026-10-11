@@ -160,6 +160,15 @@ const state = {
 };
 
 /* ------------------------------------------------------------ utilidades */
+// Ventana con permisos de administrador delante: Windows no deja controlarla.
+function avisoElevado(activo) {
+  if (activo) {
+    toast('Hay una ventana con permisos de administrador delante. Windows no deja moverla: haz clic en otra ventana.', 5200);
+  } else {
+    toast('Control restablecido', 1400);
+  }
+}
+
 function toast(message, ms = 1600) {
   el.toast.textContent = message;
   el.toast.hidden = false;
@@ -344,6 +353,7 @@ function handleMessage(message) {
         el.auth.hidden = true;
         el.app.hidden = false;
         el.authError.hidden = true;
+        if (message.aviso_elevado) avisoElevado(true);
         el.authBtn.disabled = false;
         el.pinInput.value = '';
         setStatus('Conectado', 'online');
@@ -435,6 +445,10 @@ function handleMessage(message) {
           + 'el QR o escribe el PIN.';
       el.authError.hidden = false;
       state.olvidando = false;
+      break;
+
+    case 'aviso_elevado':
+      avisoElevado(message.activo);
       break;
 
     case 'device_new':
