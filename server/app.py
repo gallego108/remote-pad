@@ -40,6 +40,7 @@ import webbrowser
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 from urllib.parse import urlsplit
@@ -104,6 +105,20 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("remotepad")
+
+# Registro en archivo: lo lee la app de escritorio, y sirve aunque el servidor
+# se arranque sin consola (en segundo plano). Las pruebas lo redirigen con
+# REMOTEPAD_LOG.
+LOG_FILE = Path(os.environ.get("REMOTEPAD_LOG")
+                or (Path(__file__).resolve().parent / "servidor.log"))
+try:
+    _registro_archivo = RotatingFileHandler(
+        LOG_FILE, maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+    _registro_archivo.setFormatter(logging.Formatter(
+        "%(asctime)s  %(levelname)-7s %(message)s", datefmt="%H:%M:%S"))
+    logging.getLogger().addHandler(_registro_archivo)
+except OSError as exc:
+    print(f"[AVISO] No se puede escribir el registro {LOG_FILE}: {exc}")
 
 
 def now_ms() -> int:
@@ -523,6 +538,8 @@ class Gateway:
         # Confirmacion en la PC de cada dispositivo NUEVO (opcional).
         self.confirmar_nuevos = bool(load_config().get("confirm_new_devices", False))
         self._confirmaciones: "deque[asyncio.Future]" = deque()
+        # Dispositivo que espera tu permiso ahora mismo (lo muestra la app de escritorio).
+        self.pendiente: Optional[dict] = None
         self._poda_fallos = 0.0
         # Certificados HTTPS (solo con --https): run() los prepara.
         self.certificados: Optional[certificado.Certificados] = None
@@ -636,6 +653,8 @@ class Gateway:
         loop = asyncio.get_running_loop()
         futuro: asyncio.Future = loop.create_future()
         self._confirmaciones.append(futuro)
+        self.pendiente = {"nombre": nombre, "addr": addr}
+        log.info("Dispositivo NUEVO esperando permiso: %s (%s)", nombre, addr)
         print("\n" + "!" * 58)
         print(f"   {nombre} ({addr}) quiere manejar esta PC.")
         print("   Escribe  si  para permitirlo o  no  para rechazarlo.")
@@ -667,6 +686,8 @@ class Gateway:
                 self._confirmaciones.remove(futuro)
             except ValueError:
                 pass
+            if not self._confirmaciones:
+                self.pendiente = None
             if ventana is not None and not ventana.done():
                 # Se respondio en la consola: se cierra la ventana pendiente.
                 native_input.dismiss_question(CONFIRM_TITLE)
@@ -1826,8 +1847,122 @@ def build_app(gateway: Gateway) -> web.Application:
         gateway.acceso.set_auth_required(activo, "desde el navegador de la PC")
         return web.json_response({"ok": True, "required": gateway.acceso.auth_required})
 
+    # ------------------------------------------------- API de la app de escritorio
+    # Lo usa la ventana de escritorio (escritorio/). Solo acepta peticiones de la
+    # propia PC y sin cabecera Origin: asi una web abierta en el navegador no
+    # puede tocarla. Los POST deben ser JSON, lo que obliga al navegador a pedir
+    # permiso previo (CORS) y este servidor no lo concede.
+    def admin_guard(request: web.Request, post: bool = False) -> None:
+        if not is_local(request) or request.headers.get("Origin"):
+            raise web.HTTPForbidden(text="Solo desde la app de escritorio de la PC")
+        if post and request.content_type != "application/json":
+            raise web.HTTPUnsupportedMediaType(text="Se espera JSON")
+
+    async def admin_datos(request: web.Request) -> dict:
+        try:
+            datos = await request.json()
+        except Exception:
+            datos = {}
+        return datos if isinstance(datos, dict) else {}
+
+    async def admin_estado(request: web.Request) -> web.StreamResponse:
+        admin_guard(request)
+        acceso = gateway.acceso
+        return web.json_response({
+            "version": APP_VERSION,
+            "host": gateway.host,
+            "port": gateway.port,
+            "https": SCHEME == "https",
+            "lan_host": gateway.lan_host,
+            "auth_required": acceso.auth_required,
+            "pin": acceso.pin,
+            "pin_seconds": acceso.pin_seconds_left(),
+            "qr_url": gateway.login_url(),
+            "qr_seconds": acceso.qr_seconds_left(),
+            "confirmar_nuevos": gateway.confirmar_nuevos,
+            "clientes": len(gateway.clients),
+            "pendiente": gateway.pendiente,
+            "apagando": gateway.shutting_down,
+            "dispositivos": gateway.lista_dispositivos(),
+        })
+
+    async def admin_ajustes(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        datos = await admin_datos(request)
+        if "auth_required" in datos:
+            gateway.acceso.set_auth_required(bool(datos["auth_required"]),
+                                             "desde la app de escritorio")
+        if "confirmar_nuevos" in datos:
+            gateway.set_confirmar_nuevos(bool(datos["confirmar_nuevos"]),
+                                         "desde la app de escritorio")
+        return web.json_response({"ok": True, "auth_required": gateway.acceso.auth_required,
+                                  "confirmar_nuevos": gateway.confirmar_nuevos})
+
+    async def admin_pin(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        pin = gateway.acceso.regenerar_pin("(desde la app de escritorio)")
+        return web.json_response({"ok": True, "pin": pin})
+
+    async def admin_qr_actual(request: web.Request) -> web.StreamResponse:
+        # Solo mira el QR vigente (no lo cambia): la ventana lo pide sin parar.
+        admin_guard(request)
+        url = gateway.login_url()
+        return web.json_response({
+            "url": url, "seconds": gateway.acceso.qr_seconds_left(),
+            "matrix": qr.encode(url, "M"),
+        })
+
+    async def admin_qr_nuevo(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        gateway.acceso.refresh_login_key()
+        url = gateway.login_url()
+        return web.json_response({
+            "ok": True, "url": url, "seconds": gateway.acceso.qr_seconds_left(),
+            "matrix": qr.encode(url, "M"),
+        })
+
+    async def admin_revocar(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        datos = await admin_datos(request)
+        nombre = await gateway.revocar_dispositivo(str(datos.get("id", "")),
+                                                   "(desde la app de escritorio)")
+        return web.json_response({"ok": bool(nombre), "nombre": nombre})
+
+    async def admin_confirmar(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        datos = await admin_datos(request)
+        respondida = gateway.responder_confirmacion(bool(datos.get("permitir")))
+        return web.json_response({"ok": respondida})
+
+    async def admin_historial(request: web.Request) -> web.StreamResponse:
+        admin_guard(request)
+        # Sin iconos: pesan mucho y la ventana solo muestra nombres.
+        return web.json_response({"programas": gateway.historial.lista()["programs"]})
+
+    async def admin_historial_quitar(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        datos = await admin_datos(request)
+        quitado = gateway.historial.quitar(str(datos.get("id", "")))
+        gateway.historial.guardar()
+        return web.json_response({"ok": quitado})
+
+    async def admin_parar(request: web.Request) -> web.StreamResponse:
+        admin_guard(request, post=True)
+        gateway.request_stop("desde la app de escritorio")
+        return web.json_response({"ok": True})
+
     app.router.add_get("/", index)
     app.router.add_get("/ws", gateway.ws_handler)
+    app.router.add_get("/api/admin/estado", admin_estado)
+    app.router.add_post("/api/admin/ajustes", admin_ajustes)
+    app.router.add_post("/api/admin/pin", admin_pin)
+    app.router.add_get("/api/admin/qr", admin_qr_actual)
+    app.router.add_post("/api/admin/qr", admin_qr_nuevo)
+    app.router.add_post("/api/admin/revocar", admin_revocar)
+    app.router.add_post("/api/admin/confirmar", admin_confirmar)
+    app.router.add_get("/api/admin/historial", admin_historial)
+    app.router.add_post("/api/admin/historial/quitar", admin_historial_quitar)
+    app.router.add_post("/api/admin/parar", admin_parar)
     app.router.add_get("/qr", qr_page)
     app.router.add_get("/qr/stream", qr_stream)
     app.router.add_post("/qr/new", qr_new)

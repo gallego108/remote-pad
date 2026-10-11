@@ -1,5 +1,16 @@
 # Historial de cambios
 
+## Sin publicar
+
+- **Panel de escritorio.** Nueva ventana para la PC (`escritorio.bat`), sin
+  consola negra: encender y parar el servidor, QR y PIN con cuenta atrás,
+  registro en vivo con filtros, dispositivos (con revocar), ajustes y programas.
+  Cerrar la ventana la deja en la bandeja del reloj. Se abre sola al iniciar
+  Windows y enciende RemotePad si está apagado (ambas cosas en Ajustes).
+- El servidor guarda su registro en `server/servidor.log` (rotado) además de
+  la consola, y tiene una API local para la app (`/api/admin/*`), que solo
+  acepta peticiones de la propia PC y sin cabecera `Origin`.
+
 ## 1.15.1
 
 - **El láser ya no roba el foco.** Al encender el 🔴 Láser, su capa

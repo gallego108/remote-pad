@@ -52,6 +52,11 @@ server/learning.json
 # Programas usados en la PC (historial para abrirlos desde el celular).
 server/history.json
 
+# Ajustes de la app de escritorio (puerto, red, arranque) y su salida de consola.
+# Los registros (servidor.log) ya estan cubiertos por *.log.
+server/escritorio.json
+server/consola.log
+
 # Secretos y configuracion local (no deberia haber, pero por si acaso)
 *.local
 .env

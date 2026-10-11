@@ -1,0 +1,4 @@
+# Panel de escritorio: ventana (pywebview) y bandeja (pystray).
+pywebview==5.4
+pystray==0.19.5
+pillow==11.3.0

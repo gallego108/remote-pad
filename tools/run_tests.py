@@ -56,6 +56,7 @@ PRUEBAS = [
     Prueba("test_iconos.py"),
     Prueba("test_historial.py"),
     Prueba("test_despertador.py"),
+    Prueba("test_admin.py"),
     Prueba("test_client.py", ["--port", "{puerto}", "--pin", "{pin}", "--cursor"],
            servidor=True, escritorio=True),
     Prueba("test_drag.py", ["--port", "{puerto}", "--pin", "{pin}"],
@@ -85,6 +86,7 @@ def entorno_aislado() -> dict:
         "REMOTEPAD_HISTORY": str(carpeta / "history.json"),
         "REMOTEPAD_CONFIG": str(carpeta / "config.json"),
         "REMOTEPAD_HTTPS_DIR": str(carpeta / "https"),
+        "REMOTEPAD_LOG": str(carpeta / "servidor.log"),
         "REMOTEPAD_SIN_VENTANAS": "1",
         "PYTHONIOENCODING": "utf-8",
     })

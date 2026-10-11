@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RemotePad</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="barra">
+      <div class="marca">
+        <span class="marca-punto"></span>
+        <div>
+          <div class="marca-titulo">RemotePad</div>
+          <div class="marca-version" id="version">v…</div>
+        </div>
+      </div>
+
+      <nav class="menu">
+        <button class="menu-item activo" data-pagina="inicio">Inicio</button>
+        <button class="menu-item" data-pagina="registro">Registro</button>
+        <button class="menu-item" data-pagina="dispositivos">Dispositivos</button>
+        <button class="menu-item" data-pagina="ajustes">Ajustes</button>
+        <button class="menu-item" data-pagina="programas">Programas</button>
+      </nav>
+
+      <div class="estado-caja">
+        <div class="estado" id="estado-servidor">
+          <span class="punto" id="estado-punto"></span>
+          <span id="estado-texto">Comprobando…</span>
+        </div>
+        <button class="boton boton-principal ancho" id="btn-encender">Encender servidor</button>
+        <button class="boton boton-peligro ancho oculto" id="btn-parar">Parar servidor</button>
+        <button class="boton boton-suave ancho" id="btn-salir-app">Salir de la app</button>
+      </div>
+    </aside>
+
+    <main class="contenido">
+      <div class="aviso-pendiente oculto" id="pendiente">
+        <div>
+          <strong id="pendiente-nombre"></strong>
+          <span id="pendiente-texto"></span>
+        </div>
+        <div class="acciones">
+          <button class="boton boton-principal" id="pendiente-si">Permitir</button>
+          <button class="boton boton-suave" id="pendiente-no">Rechazar</button>
+        </div>
+      </div>
+
+      <!-- ============================ INICIO ============================ -->
+      <section class="pagina activa" data-pagina="inicio">
+        <header class="cabecera">
+          <h1>Inicio</h1>
+          <p class="sub" id="inicio-sub"></p>
+        </header>
+
+        <div class="tarjeta destacada" id="inicio-apagado">
+          <h2>El servidor está apagado</h2>
+          <p>Los móviles no pueden conectarse. Enciende RemotePad para usar el touchpad.</p>
+          <button class="boton boton-principal" id="inicio-encender">Encender RemotePad</button>
+        </div>
+
+        <div class="rejilla-dos" id="inicio-encendido">
+          <div class="tarjeta">
+            <h2>Conexión</h2>
+            <p class="texto-grande mono" id="url-lan">—</p>
+            <p class="sub">Escribe esta dirección en el móvil, o escanea el código QR.</p>
+            <div class="fila-dato"><span>Móviles conectados</span><strong id="clientes">0</strong></div>
+            <div class="fila-dato"><span>Puerto</span><strong id="puerto">—</strong></div>
+            <div class="fila-dato"><span>Cifrado (HTTPS)</span><strong id="https">—</strong></div>
+          </div>
+
+          <div class="tarjeta">
+            <h2>Código QR</h2>
+            <div class="qr-caja" id="qr-caja"></div>
+            <div class="acciones">
+              <span class="sub" id="qr-tiempo"></span>
+              <button class="boton boton-suave" id="btn-qr">Generar otro</button>
+            </div>
+          </div>
+
+          <div class="tarjeta">
+            <h2>PIN de seguridad</h2>
+            <p class="pin mono" id="pin">——— ———</p>
+            <div class="acciones">
+              <span class="sub" id="pin-tiempo"></span>
+              <button class="boton boton-suave" id="btn-pin">Generar PIN nuevo</button>
+            </div>
+          </div>
+
+          <div class="tarjeta">
+            <h2>Acceso</h2>
+            <p class="sub" id="acceso-resumen"></p>
+            <div class="fila-dato"><span>Código de acceso</span><strong id="acceso-estado">—</strong></div>
+            <div class="fila-dato"><span>Dispositivos con acceso</span><strong id="acceso-numero">0</strong></div>
+            <button class="boton boton-suave" data-ir="ajustes">Cambiar en Ajustes</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================ REGISTRO ============================ -->
+      <section class="pagina" data-pagina="registro">
+        <header class="cabecera">
+          <h1>Registro</h1>
+          <p class="sub">Lo que hace el servidor, en directo.</p>
+        </header>
+        <div class="barra-herramientas">
+          <input class="campo buscar" id="reg-buscar" type="search" placeholder="Buscar en el registro…">
+          <select class="campo" id="reg-nivel">
+            <option value="DEBUG">Todo</option>
+            <option value="INFO" selected>Info y avisos</option>
+            <option value="WARNING">Avisos y errores</option>
+            <option value="ERROR">Solo errores</option>
+          </select>
+          <button class="boton boton-suave" id="reg-pausa">Pausar</button>
+          <button class="boton boton-suave" id="reg-limpiar">Limpiar vista</button>
+          <button class="boton boton-suave" id="reg-carpeta">Abrir carpeta</button>
+        </div>
+        <div class="registro" id="registro"></div>
+      </section>
+
+      <!-- ========================= DISPOSITIVOS ========================= -->
+      <section class="pagina" data-pagina="dispositivos">
+        <header class="cabecera">
+          <h1>Dispositivos</h1>
+          <p class="sub">Móviles que pueden manejar esta PC. Revocar corta su acceso al instante.</p>
+        </header>
+        <div class="lista" id="lista-dispositivos"></div>
+      </section>
+
+      <!-- =========================== AJUSTES ============================ -->
+      <section class="pagina" data-pagina="ajustes">
+        <header class="cabecera">
+          <h1>Ajustes</h1>
+          <p class="sub">Los de seguridad se aplican al momento. Los del servidor, al encenderlo de nuevo.</p>
+        </header>
+
+        <div class="tarjeta">
+          <h2>Seguridad</h2>
+          <div class="interruptor-fila">
+            <div>
+              <div class="etiqueta">Pedir código de acceso</div>
+              <div class="sub">PIN y QR para entrar. Desactivarlo deja la PC abierta a tu WiFi.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="ajs-auth"><span></span></label>
+          </div>
+          <div class="interruptor-fila">
+            <div>
+              <div class="etiqueta">Confirmar dispositivos nuevos</div>
+              <div class="sub">Cada móvil nuevo espera tu permiso en esta PC.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="ajs-confirmar"><span></span></label>
+          </div>
+        </div>
+
+        <div class="tarjeta">
+          <h2>Servidor</h2>
+          <div class="rejilla-form">
+            <label class="campo-form">
+              <span class="etiqueta">Puerto</span>
+              <input class="campo" id="lan-puerto" type="number" min="1" max="65535">
+            </label>
+            <label class="campo-form">
+              <span class="etiqueta">Quién puede conectarse</span>
+              <select class="campo" id="lan-red">
+                <option value="0.0.0.0">Móviles de mi WiFi</option>
+                <option value="127.0.0.1">Solo esta PC</option>
+              </select>
+            </label>
+          </div>
+          <div class="interruptor-fila">
+            <div>
+              <div class="etiqueta">Cifrado HTTPS</div>
+              <div class="sub">Usa un certificado local. Hay que instalarlo en el móvil.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="lan-https"><span></span></label>
+          </div>
+          <div class="interruptor-fila">
+            <div>
+              <div class="etiqueta">Encender RemotePad al abrir esta app</div>
+              <div class="sub">Si está apagado, lo enciende solo.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="lan-auto"><span></span></label>
+          </div>
+          <div class="interruptor-fila">
+            <div>
+              <div class="etiqueta">Abrir al iniciar Windows</div>
+              <div class="sub">Se abre en la bandeja, sin ventana, al encender el PC.</div>
+            </div>
+            <label class="switch"><input type="checkbox" id="lan-inicio"><span></span></label>
+          </div>
+          <div class="acciones">
+            <span class="sub" id="lan-aviso"></span>
+            <button class="boton boton-principal" id="lan-guardar">Guardar</button>
+          </div>
+        </div>
+
+        <div class="tarjeta">
+          <h2>Acerca de</h2>
+          <div class="fila-dato"><span>Versión del servidor</span><strong id="acerca-version">—</strong></div>
+        </div>
+      </section>
+
+      <!-- =========================== PROGRAMAS ========================== -->
+      <section class="pagina" data-pagina="programas">
+        <header class="cabecera">
+          <h1>Programas</h1>
+          <p class="sub">Programas que has usado en la PC. Desde el móvil se pueden volver a abrir.</p>
+        </header>
+        <div class="lista" id="lista-programas"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="velo oculto" id="modal">
+    <div class="modal">
+      <h2 id="modal-titulo"></h2>
+      <p id="modal-texto"></p>
+      <div class="acciones" id="modal-acciones"></div>
+    </div>
+  </div>
+
+  <div class="aviso-flotante oculto" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

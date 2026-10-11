@@ -141,6 +141,29 @@ estar encendida y con la sesión iniciada. Conviene que la IP de la PC no
 cambie (reserva de DHCP en el router), porque el icono del celular apunta a
 ella. El registro queda en `server/despertador.log`.
 
+### Panel de escritorio
+
+Doble clic en **`escritorio.bat`** (o `python escritorio/remotepad_escritorio.py`)
+y se abre una ventana para la PC, sin consola negra:
+
+- **Inicio**: encender y parar el servidor, la dirección para el móvil, el QR
+  y el PIN (con cuenta atrás), y el aviso cuando un móvil nuevo pide permiso.
+- **Registro**: lo que hace el servidor en directo, con filtro por nivel y
+  buscador. Se guarda en `server/servidor.log`.
+- **Dispositivos**: quién tiene acceso, con su última conexión; se puede revocar.
+- **Ajustes**: código de acceso, confirmación de dispositivos nuevos, puerto,
+  red, HTTPS y arranque. Los de seguridad se aplican al momento.
+- **Programas**: el historial de programas que se pueden abrir desde el móvil.
+
+Cerrar la ventana la deja en la **bandeja** del reloj (junto a la hora), con el
+servidor como estaba. Desde el icono se abre, se enciende o para el servidor, o
+se sale. Al salir pregunta si quieres dejar el servidor encendido.
+
+Por defecto la app se abre sola al iniciar Windows (en la bandeja, sin
+ventana) y enciende RemotePad si está apagado. Ambas cosas se cambian en
+**Ajustes**. La primera vez instala lo que falta (`pywebview`, `pystray`,
+`pillow`; ver `escritorio/requirements.txt`).
+
 ### Cómo funciona el código QR
 
 El QR contiene una dirección con una **clave de un solo uso**
@@ -293,6 +316,7 @@ También puedes pasar estos parámetros a `iniciar.bat`, por ejemplo:
 ```
 remote-pad/
 ├── iniciar.bat              ← doble clic para usar la app
+├── escritorio.bat           ← doble clic para el panel de escritorio (ventana)
 ├── abrir-firewall.bat       ← si el celular no conecta: abre el puerto
 ├── probar.bat               ← doble clic para comprobar que todo funciona
 ├── activar-codigo.bat       ← volver a pedir el PIN y el QR
@@ -306,6 +330,7 @@ remote-pad/
 │   ├── native_input.py      Capa nativa de Windows (SendInput, cursor, rueda)
 │   ├── laser.py             Puntero láser (capa transparente sobre la pantalla)
 │   ├── learning.py          Aprendizaje del tacto
+│   ├── servidor.log         Registro del servidor (lo lee el panel) — local
 │   ├── config.json          ¿Se pide código de acceso? — local, no se versiona
 │   ├── tokens.json          Accesos de los dispositivos — local, no se versiona
 │   ├── profiles.json        Preferencias de cada dispositivo — local, no se versiona

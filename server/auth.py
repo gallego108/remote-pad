@@ -365,6 +365,14 @@ class ControlAcceso:
         log.info("Nuevo PIN de seguridad: %s", self.pin)
         self._avisar({"t": "pin", "pin": self.pin})
 
+    def regenerar_pin(self, motivo: str = "") -> str:
+        """Genera un PIN nuevo ahora mismo (pedido desde la app de escritorio)."""
+        self.pin = new_pin()
+        self._pin_generated = time.monotonic()
+        log.info("Nuevo PIN de seguridad%s: %s", f" {motivo}".rstrip(), self.pin)
+        self._avisar({"t": "pin", "pin": self.pin})
+        return self.pin
+
     def pin_seconds_left(self) -> int:
         remaining = PIN_ROTATE_SECONDS - (time.monotonic() - self._pin_generated)
         return max(0, int(remaining))
