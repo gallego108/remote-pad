@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="stylesheet" href="styles.css?v=1.16.0">
+<link rel="stylesheet" href="styles.css?v=1.17.0">
 <script>
 /* ---------------------------------------------------------------------
    Version de la parte web. El servidor inyecta la suya en la etiqueta meta
@@ -24,7 +24,7 @@
    anterior; la pagina cargaba, pedia el PIN y el servidor recibia acciones
    que ya no existen ("accion desconocida: auth").
    --------------------------------------------------------------------- */
-const REMOTEPAD_WEB = '1.16.0';
+const REMOTEPAD_WEB = '1.17.0';
 (function () {
   const meta = document.querySelector('meta[name="remotepad-version"]');
   const servidor = meta ? meta.content : '';
@@ -176,6 +176,7 @@ const REMOTEPAD_WEB = '1.16.0';
     <span class="grupo-titulo">Extras</span>
     <button class="tool" data-panel="media"><span>🎵</span>Multimedia</button>
     <button class="tool" data-panel="presentation"><span>📊</span>Presentar</button>
+    <button class="tool" data-panel="rdp"><span>🖥️</span>Escritorio</button>
     <button class="tool" data-panel="settings"><span>⚙️</span>Ajustes</button>
     <button class="tool" data-panel="help"><span>❓</span>Ayuda</button>
   </nav>
@@ -479,6 +480,31 @@ const REMOTEPAD_WEB = '1.16.0';
   </div>
 </section>
 
+<!-- ======================= ESCRITORIO REMOTO (RDP) ======================= -->
+<section class="sheet" id="sheet-rdp" hidden>
+  <header><h2>Escritorio remoto</h2><button class="close" data-close>✕</button></header>
+  <div class="sheet-body">
+    <p class="tiny">Para ver y manejar el escritorio completo de la PC desde
+    este dispositivo se usa el escritorio remoto de Windows. Esta pantalla
+    solo muestra cómo conectarse; activarlo lo haces tú en la PC.</p>
+    <p id="rdp-mensaje" class="tiny">Comprobando…</p>
+    <dl class="rdp-datos">
+      <dt>Dirección (IP)</dt><dd id="rdp-ip">—</dd>
+      <dt>Puerto</dt><dd id="rdp-puerto">—</dd>
+      <dt>Nombre de la PC</dt><dd id="rdp-pc">—</dd>
+    </dl>
+    <div class="sheet-actions">
+      <button class="key primary" id="btn-rdp-copiar">Copiar la IP</button>
+      <button class="key" id="btn-rdp-refrescar">⟳ Comprobar de nuevo</button>
+    </div>
+    <p class="tiny">En el celular o la tableta instala la app gratuita
+    <a href="https://play.google.com/store/apps/details?id=com.microsoft.rdc.androidx" target="_blank" rel="noopener">Microsoft Remote Desktop</a>,
+    añade un PC con esa IP y entra con tu usuario de Windows. Funciona dentro de
+    la misma red Wi-Fi.</p>
+    <p class="tiny" id="rdp-version"></p>
+  </div>
+</section>
+
 <!-- ============================ AYUDA ============================ -->
 <section class="sheet" id="sheet-help" hidden>
   <header><h2>Ayuda y guía de uso</h2><button class="close" data-close>✕</button></header>
@@ -655,7 +681,7 @@ const REMOTEPAD_WEB = '1.16.0';
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="app.js?v=1.16.0"></script>
+<script src="app.js?v=1.17.0"></script>
 <script>
 /* Compatibilidad con copias antiguas de la app -------------------------
    Una version vieja de app.js muestra el panel de control (id="app") pero

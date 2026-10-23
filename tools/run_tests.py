@@ -55,6 +55,7 @@ PRUEBAS = [
     Prueba("test_scroll.py"),
     Prueba("test_iconos.py"),
     Prueba("test_historial.py"),
+    Prueba("test_rdp.py"),
     Prueba("test_despertador.py"),
     Prueba("test_admin.py"),
     Prueba("test_actualizador.py"),

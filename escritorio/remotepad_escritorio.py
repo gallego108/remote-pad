@@ -219,6 +219,15 @@ class Api:
         if self._ventana is not None:
             self._ventana.show()
 
+    def pedir_salida(self) -> None:
+        """
+        Desde la bandeja: muestra el panel y la propia interfaz pregunta al salir.
+        Antes era un MessageBox nativo sin foco, y sus botones no respondian.
+        """
+        if self._ventana is not None:
+            self._ventana.show()
+            self._ventana.evaluate_js("pedirSalida()")
+
     def salir(self, parar_servidor: bool) -> None:
         """Cierra la app. Con parar_servidor, tambien apaga RemotePad."""
         if parar_servidor and self._en_marcha():
@@ -291,10 +300,7 @@ class Bandeja:
             self.api.arrancar()
 
     def _salir(self, icono, item) -> None:
-        respuesta = control.preguntar_parar_servidor()
-        if respuesta is None:
-            return
-        self.api.salir(parar_servidor=respuesta)
+        self.api.pedir_salida()
 
     def detener(self) -> None:
         self._parar.set()

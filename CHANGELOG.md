@@ -1,5 +1,13 @@
 # Historial de cambios
 
+## 1.17.0
+
+- **Icono «Escritorio» para el escritorio remoto.** Nuevo botón 🖥️ en las
+  herramientas del celular que muestra la IP, el puerto y el nombre de la PC
+  para conectarse con el escritorio remoto de Windows (RDP) desde la app
+  *Microsoft Remote Desktop*. RemotePad solo comprueba si está activado: para
+  activarlo hay que hacerlo en *Configuración > Sistema > Escritorio remoto*.
+
 ## 1.16.0
 
 - **Aviso cuando una ventana de administrador bloquea el control.** Si abres

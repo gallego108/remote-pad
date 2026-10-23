@@ -634,6 +634,19 @@ textarea#kb-text:focus { border-color: var(--accent); }
 .pasos .tipo-paso { color: var(--accent); }
 .pasos .key { padding: 8px 0; }
 
+/* Escritorio remoto: IP, puerto y nombre de la PC, en dos columnas. */
+.rdp-datos {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.rdp-datos dt { color: var(--muted, #8b96a8); font-size: .85rem; }
+.rdp-datos dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
 /* Programas abiertos: cada fila es un botón grande, fácil de tocar. */
 .ventanas {
   list-style: none;

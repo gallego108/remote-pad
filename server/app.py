@@ -57,6 +57,7 @@ except ImportError as exc:  # pragma: no cover
 import auth
 import certificado
 import qr
+import rdp
 import despertador
 import historial
 import learning
@@ -82,7 +83,7 @@ SCHEME = "http"
 # ejecutando la version nueva y no una copia guardada. Debe coincidir con la
 # constante REMOTEPAD_WEB de web/index.html: si no, la propia pagina fuerza una
 # recarga (y avisa) para que el celular no se quede con JavaScript viejo.
-APP_VERSION = "1.16.0"
+APP_VERSION = "1.17.0"
 ANSWER_TIMEOUT = 2.0
 MAX_ACTIONS_PER_SECOND = 450
 SCROLL_QUEUE_DELAY_MS = 16
@@ -1228,6 +1229,14 @@ class Gateway:
             # Programas abiertos, para elegir cual ver desde el celular.
             return await asyncio.get_running_loop().run_in_executor(
                 self.executor, c.windows
+            )
+
+        if action == "rdp_info":
+            # Estado del escritorio remoto de Windows. Solo se lee: activarlo
+            # exige administrador y se hace en Configuracion de Windows.
+            ip = local_ip()
+            return await asyncio.get_running_loop().run_in_executor(
+                self.executor, lambda h=ip: rdp.estado(h, socket.gethostname())
             )
 
         if action == "programs_history":

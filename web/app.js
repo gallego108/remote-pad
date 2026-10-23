@@ -66,6 +66,7 @@ const sheets = {
   presentation: $('sheet-presentation'),
   gamepad: $('sheet-gamepad'),
   windows: $('sheet-windows'),
+  rdp: $('sheet-rdp'),
   settings: $('sheet-settings'),
   help: $('sheet-help'),
 };
@@ -491,6 +492,8 @@ function handleMessage(message) {
         pintarDispositivos(message.d);
       } else if (message.a === 'windows_list' && message.d && !message.d.error) {
         pintarVentanas(message.d.windows, message.d.icons);
+      } else if (message.a === 'rdp_info' && message.d && !message.d.error) {
+        pintarRdp(message.d);
       } else if (message.a === 'programs_history' && message.d && !message.d.error) {
         pintarProgramas(message.d.programs, message.d.icons);
       } else if (message.a === 'program_launch' && message.d && message.d.ok) {
@@ -1458,6 +1461,35 @@ function pintarVentanas(ventanas, iconos) {
   });
 }
 
+// Datos para conectarse por el escritorio remoto de Windows (ver server/rdp.py).
+// Todo se pone con textContent: el nombre de la PC no es de fiar.
+let rdpIp = '';
+
+function pintarRdp(datos) {
+  rdpIp = typeof datos.ip === 'string' ? datos.ip : '';
+  const poner = (id, texto) => {
+    const nodo = $(id);
+    if (nodo) nodo.textContent = texto;
+  };
+  poner('rdp-mensaje', typeof datos.mensaje === 'string' ? datos.mensaje : '');
+  poner('rdp-ip', rdpIp || '—');
+  poner('rdp-puerto', datos.puerto != null ? String(datos.puerto) : '—');
+  poner('rdp-pc', typeof datos.pc === 'string' && datos.pc ? datos.pc : '—');
+}
+
+async function copiarIpRdp() {
+  if (!rdpIp) {
+    toast('Todavía no hay una IP que copiar');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(rdpIp);
+    toast('IP copiada: ' + rdpIp);
+  } catch (error) {
+    toast('No se pudo copiar. La IP es ' + rdpIp, 3000);
+  }
+}
+
 function pintarProgramas(programas, iconos) {
   const lista = $('programs-list');
   if (!lista || !Array.isArray(programas)) return;
@@ -1620,6 +1652,11 @@ function openSheet(name) {
   }
   if (name === 'shortcuts') send('monitor_list', {});
   if (name === 'windows') pedirVentanas();
+  if (name === 'rdp') {
+    send('rdp_info', {});
+    const version = $('rdp-version');
+    if (version) version.textContent = appVersion() ? 'RemotePad ' + appVersion() : '';
+  }
   if (name === 'help') {
     const acerca = $('help-about');
     if (acerca) {
@@ -2556,6 +2593,8 @@ function bindUI() {
     });
   });
   $('windows-refresh').addEventListener('click', pedirVentanas);
+  $('btn-rdp-copiar').addEventListener('click', copiarIpRdp);
+  $('btn-rdp-refrescar').addEventListener('click', () => send('rdp_info', {}));
   // Tocar fuera del menú lo cierra (sin que ese toque haga nada más).
   document.addEventListener('pointerdown', (event) => {
     if (el.winMenu.hidden) return;

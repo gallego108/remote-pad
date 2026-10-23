@@ -570,6 +570,11 @@ async function salirDeLaApp() {
   api().salir(eleccion);
 }
 
+// Llamada desde Python (icono de la bandeja): no devuelve nada, para que evaluate_js no espere una promesa.
+function pedirSalida() {
+  salirDeLaApp();
+}
+
 // ----------------------------------------------------------------- inicio
 function iniciar() {
   document.querySelectorAll('.menu-item').forEach((b) =>

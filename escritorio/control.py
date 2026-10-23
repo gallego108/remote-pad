@@ -271,25 +271,3 @@ def quitar_programa_en_disco(clave: str) -> bool:
     quitado = anotado.quitar(clave)
     anotado.guardar()
     return quitado
-
-
-# -------------------------------------------------------- ventana de decision
-def preguntar_parar_servidor() -> Optional[bool]:
-    """
-    Pregunta al salir si tambien se para el servidor.
-    Devuelve True (parar), False (dejarlo) o None (cancelar la salida).
-    """
-    import ctypes
-    MB_YESNOCANCEL, MB_ICONQUESTION, MB_TOPMOST = 0x3, 0x20, 0x40000
-    IDYES, IDNO = 6, 7
-    texto = ("RemotePad sigue en marcha.\n\n"
-             "¿Quieres parar también el servidor antes de salir?\n\n"
-             "Sí: para el servidor y cierra la app.\n"
-             "No: cierra la app y deja el servidor encendido.")
-    respuesta = ctypes.windll.user32.MessageBoxW(
-        None, texto, "RemotePad", MB_YESNOCANCEL | MB_ICONQUESTION | MB_TOPMOST)
-    if respuesta == IDYES:
-        return True
-    if respuesta == IDNO:
-        return False
-    return None
