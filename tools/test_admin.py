@@ -99,8 +99,10 @@ def pruebas_api(proceso: subprocess.Popen) -> None:
     check("GET /api/admin/estado desde la PC responde 200", codigo == 200, f"codigo={codigo}")
     check("el estado trae PIN, acceso y dispositivos",
           bool(datos) and "pin" in datos and "auth_required" in datos and "dispositivos" in datos)
+    # El valor depende de la ventana que tenga delante el escritorio donde corre la prueba
+    # (en CI no se puede abrir su proceso y se supone elevado): solo se comprueba el tipo.
     check("el estado trae el aviso de ventana con permisos de administrador",
-          bool(datos) and datos.get("aviso_elevado") is False)
+          bool(datos) and isinstance(datos.get("aviso_elevado"), bool))
 
     codigo, _ = llamar("GET", "/api/admin/estado", cabeceras={"Origin": "http://evil.example"})
     check("una web (cabecera Origin) no puede leer el estado", codigo == 403, f"codigo={codigo}")
@@ -150,6 +152,7 @@ def pruebas_dispositivos() -> None:
     identificador = auth.Dispositivos().listar()[0]["id"]
     proceso = arrancar_servidor_con_dispositivo()
     try:
+        check("el servidor con el dispositivo arranca", esperar_servidor(PUERTO_DISPOSITIVO))
         _, estado = llamar("GET", "/api/admin/estado", puerto=PUERTO_DISPOSITIVO)
         check("el dispositivo aparece en el estado",
               bool(estado) and any(d["id"] == identificador for d in estado["dispositivos"]))
